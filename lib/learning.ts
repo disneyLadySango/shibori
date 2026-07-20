@@ -84,8 +84,12 @@ export function createLearningState(input: { purpose: string; role: string; why:
 }
 
 export function setLearningPlan(state: LearningState, targetState: string, path: LearningPathNode[]): LearningState {
-  const current = firstActionableNode(path);
-  return { ...state, phase: "learning", targetState, path, currentNodeId: current?.id ?? null, focus: null, updatedAt: now() };
+  const protectedPath = path.map((node) => {
+    const existing = state.path.find((candidate) => candidate.id === node.id);
+    return { ...node, status: existing?.status ?? (node.status === "unknown" ? "unknown" as const : "unconfirmed" as const) };
+  });
+  const current = firstActionableNode(protectedPath);
+  return { ...state, phase: "learning", targetState, path: protectedPath, currentNodeId: current?.id ?? null, focus: null, updatedAt: now() };
 }
 
 export function chooseFocus(state: LearningState, focus: FocusRecommendation): LearningState {

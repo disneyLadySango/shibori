@@ -50,6 +50,13 @@ describe("US-002 current position", () => {
     expect(state.path.find((node) => node.id === "unknown")?.status).toBe("unknown");
   });
 
+  it("does not accept model-proposed confirmation without a check", () => {
+    const state = setLearningPlan(createLearningState({ purpose: "統計", role: "", why: "" }), "判断できる", [
+      { id: "claimed", title: "教材に書かれた内容", dependsOn: [], status: "confirmed" },
+    ]);
+    expect(state.path[0].status).toBe("unconfirmed");
+  });
+
   it("keeps a current position while dependency knowledge is still unknown", () => {
     const state = setLearningPlan(createLearningState({ purpose: "統計", role: "", why: "" }), "判断できる", [
       { id: "unknown", title: "関係を確認する", dependsOn: [], status: "unknown" },
