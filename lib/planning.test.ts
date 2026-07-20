@@ -16,6 +16,13 @@ describe("learning plan", () => {
     expect(learningPlanSchema.safeParse(createDemoLearningPlan(createLearningState({ purpose: "統計", role: "PM", why: "" }))).success).toBe(true);
   });
 
+  it("creates a visible first current position for a newly declared Can", () => {
+    const state = { ...createLearningState({ purpose: "統計", role: "PM", why: "" }), phase: "learning" as const, targetState: "A/Bテストを判断できる" };
+    const plan = createDemoLearningPlan(state);
+    expect(plan.path).toHaveLength(1);
+    expect(plan.currentNodeId).toBe("target");
+  });
+
   it("includes path, gaps, and the current recommendation when replanning", () => {
     const state = setLearningPlan(createLearningState({ purpose: "統計", role: "PM", why: "A/Bテスト" }), "A/Bテストを判断できる", [
       { id: "p-value", title: "p値を説明できる", dependsOn: [], status: "gap" },

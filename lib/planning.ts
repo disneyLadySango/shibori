@@ -114,11 +114,12 @@ export function createDemoLearningPlan(state: LearningState): LearningPlanPropos
     };
   }
 
-  const current = state.path.find((node) => node.id === state.currentNodeId) ?? state.path.find((node) => node.status === "unconfirmed");
+  const path = state.path.length ? state.path : [{ id: "target", title: state.targetState, dependsOn: [], status: "unconfirmed" as const }];
+  const current = path.find((node) => node.id === state.currentNodeId) ?? path.find((node) => node.status === "unconfirmed");
   return {
     mode: "learning",
     targetState: state.targetState,
-    path: state.path,
+    path,
     currentNodeId: current?.id ?? null,
     focus: state.focus ?? {
       id: `learn-${current?.id ?? "next"}`,

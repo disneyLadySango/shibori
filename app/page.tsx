@@ -2,209 +2,218 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 
+import {
+  applyCheckResult,
+  chooseFocus,
+  completeReinforcement,
+  createLearningState,
+  deferGap,
+  resumeLearning,
+  setLearningPlan,
+} from "@/lib/learning";
 import { sampleMaterial } from "@/lib/shibori";
-import type { DeskEvaluation, GapEntry, LearningSession, Projection, UserContext } from "@/lib/types";
+import type {
+  LearningPlanProposal,
+  LearningState,
+  Projection,
+  UnderstandingCheckResult,
+} from "@/lib/types";
 
-const emptyContext: UserContext = { role: "", goal: "", why: "", updatedAt: "" };
-const storageKeys = { context: "shibori-context", gaps: "shibori-gaps", session: "shibori-session" };
+const storageKey = "shibori-learning-state-v2";
 
 function Aperture({ active, complete }: { active?: boolean; complete?: boolean }) {
-  return (
-    <svg className={`aperture ${active ? "is-active" : ""} ${complete ? "is-complete" : ""}`} viewBox="0 0 64 64" aria-hidden="true">
-      <circle cx="32" cy="32" r="29" fill="none" stroke="currentColor" strokeWidth="1.5" />
-      {[0, 60, 120, 180, 240, 300].map((rotation) => (
-        <path key={rotation} d="M32 7 C44 11 50 19 50 31 L33 34 L21 20 Z" transform={`rotate(${rotation} 32 32)`} fill="currentColor" opacity=".82" />
-      ))}
-      <circle cx="32" cy="32" r={complete ? 3 : 9} fill="var(--paper)" className="aperture-hole" />
-    </svg>
-  );
+  return <svg className={`aperture ${active ? "is-active" : ""} ${complete ? "is-complete" : ""}`} viewBox="0 0 64 64" aria-hidden="true">
+    <circle cx="32" cy="32" r="29" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    {[0, 60, 120, 180, 240, 300].map((rotation) => <path key={rotation} d="M32 7 C44 11 50 19 50 31 L33 34 L21 20 Z" transform={`rotate(${rotation} 32 32)`} fill="currentColor" opacity=".82" />)}
+    <circle cx="32" cy="32" r={complete ? 3 : 9} fill="var(--paper)" className="aperture-hole" />
+  </svg>;
 }
 
-function SectionTitle({ number, children }: { number: string; children: React.ReactNode }) {
-  return <div className="section-title"><span>{number}</span><h2>{children}</h2></div>;
+function SectionTitle({ number, children, note }: { number: string; children: React.ReactNode; note?: string }) {
+  return <div className="section-title"><span>{number}</span><div><h2>{children}</h2>{note && <p>{note}</p>}</div></div>;
+}
+
+function statusLabel(status: string) {
+  return { unknown: "関係を確認中", unconfirmed: "未確認", confirmed: "確認できた", gap: "補強候補" }[status] ?? status;
 }
 
 export default function Home() {
-  const [context, setContext] = useState<UserContext>(emptyContext);
+  const [purpose, setPurpose] = useState("");
+  const [role, setRole] = useState("");
+  const [why, setWhy] = useState("");
+  const [target, setTarget] = useState("");
   const [material, setMaterial] = useState("");
-  const [gaps, setGaps] = useState<GapEntry[]>([]);
+  const [state, setState] = useState<LearningState | null>(null);
+  const [plan, setPlan] = useState<LearningPlanProposal | null>(null);
   const [projection, setProjection] = useState<Projection | null>(null);
+  const [answer, setAnswer] = useState("");
+  const [result, setResult] = useState<UnderstandingCheckResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [checking, setChecking] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
   const [audioUrl, setAudioUrl] = useState("");
-  const [contextSaved, setContextSaved] = useState(false);
-  const [deskAnswer, setDeskAnswer] = useState("");
-  const [evaluation, setEvaluation] = useState<DeskEvaluation | null>(null);
-  const [evaluationLoading, setEvaluationLoading] = useState(false);
-  const [evaluationError, setEvaluationError] = useState("");
-  const [sessionRestored, setSessionRestored] = useState(false);
+  const [error, setError] = useState("");
+  const [restored, setRestored] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
+      const serialized = localStorage.getItem(storageKey);
+      if (!serialized) return;
       try {
-        const savedContext = localStorage.getItem(storageKeys.context);
-        const savedGaps = localStorage.getItem(storageKeys.gaps);
-        const savedSession = localStorage.getItem(storageKeys.session);
-        if (savedContext) { setContext(JSON.parse(savedContext)); setContextSaved(true); }
-        if (savedGaps) setGaps(JSON.parse(savedGaps));
-        if (savedSession) {
-          const session: LearningSession = JSON.parse(savedSession);
-          setMaterial(session.material);
-          setProjection(session.projection);
-          setDeskAnswer(session.deskAnswer);
-          setEvaluation(session.evaluation);
-          setSessionRestored(true);
-        }
-      } catch {
-        localStorage.removeItem(storageKeys.context);
-        localStorage.removeItem(storageKeys.gaps);
-        localStorage.removeItem(storageKeys.session);
-      }
+        const saved = resumeLearning(serialized);
+        setState(saved); setPurpose(saved.purpose.statement); setRole(saved.purpose.role); setWhy(saved.purpose.why); setTarget(saved.targetState ?? ""); setRestored(true);
+      } catch { localStorage.removeItem(storageKey); }
     });
     return () => cancelAnimationFrame(frame);
   }, []);
 
+  useEffect(() => {
+    if (state) localStorage.setItem(storageKey, JSON.stringify(state));
+  }, [state]);
+
   useEffect(() => () => { if (audioUrl) URL.revokeObjectURL(audioUrl); }, [audioUrl]);
 
-  useEffect(() => {
-    if (!projection) return;
-    const session: LearningSession = { material, projection, deskAnswer, evaluation, updatedAt: new Date().toISOString() };
-    localStorage.setItem(storageKeys.session, JSON.stringify(session));
-  }, [deskAnswer, evaluation, material, projection]);
-
-  function saveContext(event: FormEvent) {
-    event.preventDefault();
-    const next = { ...context, updatedAt: new Date().toISOString() };
-    setContext(next); localStorage.setItem(storageKeys.context, JSON.stringify(next)); setContextSaved(true);
+  async function requestPlan(nextState: LearningState, clearCheck = true) {
+    const response = await fetch("/api/plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state: nextState, material }) });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error);
+    const proposal = body as LearningPlanProposal;
+    let planned = nextState;
+    if (proposal.mode === "learning" && proposal.targetState) planned = setLearningPlan(nextState, proposal.targetState, proposal.path);
+    planned = chooseFocus(planned, proposal.focus);
+    setState(planned); setPlan(proposal); setRestored(false);
+    if (clearCheck) { setResult(null); setAnswer(""); }
+    return planned;
   }
 
-  async function project() {
-    setError("");
-    if (!context.role || !context.goal || !context.why) { setError("先に、あなたのことを3つ教えてください。"); return; }
-    if (material.trim().length < 30) { setError("30文字以上の教材を入れてください。"); return; }
-    const activeContext = { ...context, updatedAt: new Date().toISOString() };
-    setContext(activeContext); setContextSaved(true);
-    localStorage.setItem(storageKeys.context, JSON.stringify(activeContext));
-    if (audioUrl) { URL.revokeObjectURL(audioUrl); setAudioUrl(""); }
-    setLoading(true);
+  async function projectMaterial(nextState: LearningState) {
+    if (material.trim().length < 30) { setProjection(null); return; }
+    const context = { role: nextState.purpose.role, goal: nextState.targetState ?? nextState.purpose.statement, why: nextState.purpose.why, updatedAt: new Date().toISOString() };
+    const gaps = nextState.gaps.filter((gap) => gap.status !== "resolved").map((gap) => ({ id: gap.id, topic: gap.topic, reason: gap.reason, source: "user_reported" as const, resolved: false }));
+    const response = await fetch("/api/project", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context, material, gaps }) });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error);
+    setProjection(body);
+  }
+
+  async function begin(event: FormEvent) {
+    event.preventDefault(); setError(""); setLoading(true);
     try {
-      const response = await fetch("/api/project", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context: activeContext, material, gaps }) });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error);
-      setDeskAnswer(""); setEvaluation(null); setSessionRestored(false);
-      setProjection(body);
-      const detected: GapEntry[] = body.gaps.map((gap: { topic: string; reason: string }) => ({ id: crypto.randomUUID(), ...gap, source: "detected", resolved: false }));
-      const next = [...gaps, ...detected.filter((gap) => !gaps.some((existing) => existing.topic === gap.topic))];
-      setGaps(next); localStorage.setItem(storageKeys.gaps, JSON.stringify(next));
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "教材を絞れませんでした。"); }
+      let next = createLearningState({ purpose: purpose.trim(), role: role.trim(), why: why.trim() });
+      if (target.trim()) next = { ...next, phase: "learning", targetState: target.trim() };
+      next = await requestPlan(next);
+      await projectMaterial(next);
+      requestAnimationFrame(() => document.querySelector("#path")?.scrollIntoView({ behavior: "smooth" }));
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "学びの入口を作れませんでした。"); }
     finally { setLoading(false); }
   }
 
-  function reportGap(segment: Projection["segments"][number]) {
-    const topic = segment.text.replace(/[。、]/g, "").slice(0, 24);
-    if (gaps.some((gap) => gap.topic === topic && !gap.resolved)) return;
-    const next = [...gaps, { id: crypto.randomUUID(), topic, reason: `「${segment.text}」がわからなかった`, source: "user_reported" as const, resolved: false }];
-    setGaps(next); localStorage.setItem(storageKeys.gaps, JSON.stringify(next));
+  async function replan(nextState: LearningState = state!) {
+    if (!nextState) return;
+    setLoading(true); setError("");
+    try { const planned = await requestPlan(nextState); await projectMaterial(planned); }
+    catch (caught) { setError(caught instanceof Error ? caught.message : "集中先を更新できませんでした。"); }
+    finally { setLoading(false); }
   }
 
-  function resolveGap(id: string) {
-    const next = gaps.map((gap) => gap.id === id ? { ...gap, resolved: true } : gap);
-    setGaps(next); localStorage.setItem(storageKeys.gaps, JSON.stringify(next));
+  async function establishTarget() {
+    if (!state || !target.trim()) { setError("到達状態を「〜できる」の形で入力してください。"); return; }
+    await replan({ ...state, phase: "learning", targetState: target.trim(), focus: null, updatedAt: new Date().toISOString() });
+  }
+
+  async function check() {
+    if (!state || !plan || !answer.trim()) { setError("考えたことを、途中まででも書いてください。"); return; }
+    setChecking(true); setError("");
+    try {
+      const response = await fetch("/api/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state, prompt: plan.check.prompt, answer }) });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error);
+      const checked = body as UnderstandingCheckResult;
+      setResult(checked);
+      if (state.phase === "learning") {
+        const updated = applyCheckResult(state, checked);
+        await requestPlan(updated, false);
+        await projectMaterial(updated);
+      }
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "理解状態を確認できませんでした。"); }
+    finally { setChecking(false); }
+  }
+
+  function selectAnotherFocus(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!state) return;
+    const data = new FormData(event.currentTarget);
+    const title = String(data.get("focus") ?? "").trim();
+    if (!title) return;
+    setState(chooseFocus(state, { id: crypto.randomUUID(), kind: "learn", title, reason: "学習者が今取り組むと選んだ集中先です。", nodeId: null }));
   }
 
   async function playLecture() {
     if (!projection) return;
     if (audioUrl) { await audioRef.current?.play(); return; }
-    setAudioLoading(true); setError("");
+    setAudioLoading(true);
     try {
       const response = await fetch("/api/speech", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ script: projection.earScript }) });
-      if (!response.ok) { const body = await response.json(); throw new Error(body.error); }
-      const nextUrl = URL.createObjectURL(await response.blob()); setAudioUrl(nextUrl);
-      requestAnimationFrame(() => audioRef.current?.play());
+      if (!response.ok) throw new Error((await response.json()).error);
+      const url = URL.createObjectURL(await response.blob()); setAudioUrl(url); requestAnimationFrame(() => audioRef.current?.play());
     } catch (caught) { setError(caught instanceof Error ? caught.message : "音声を再生できませんでした。"); }
     finally { setAudioLoading(false); }
   }
 
-  async function evaluateAnswer() {
-    if (!projection || deskAnswer.trim().length < 2) { setEvaluationError("考えたことを、途中まででも書いてください。"); return; }
-    setEvaluationLoading(true); setEvaluationError("");
-    try {
-      const response = await fetch("/api/evaluate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ context, problem: projection.deskTask.problem, answer: deskAnswer }),
-      });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error);
-      setEvaluation(body);
-      if (body.gap && !gaps.some((gap) => gap.topic === body.gap.topic && !gap.resolved)) {
-        const next = [...gaps, { id: crypto.randomUUID(), ...body.gap, source: "user_reported" as const, resolved: false }];
-        setGaps(next); localStorage.setItem(storageKeys.gaps, JSON.stringify(next));
-      }
-    } catch (caught) { setEvaluationError(caught instanceof Error ? caught.message : "回答を評価できませんでした。"); }
-    finally { setEvaluationLoading(false); }
-  }
+  const openGaps = state?.gaps.filter((gap) => gap.status !== "resolved") ?? [];
 
-  return (
-    <main>
-      <header className="hero">
-        <div className="brand"><Aperture complete={Boolean(projection)} /><span>シ ボ リ</span></div>
-        {sessionRestored && <a className="resume-chip" href="#allocation">前回の「今日の配分」を再開 →</a>}
-        <p className="eyebrow">FOCUS PORTFOLIO MANAGER</p>
-        <h1>あなたの集中を、<br /><em>集中に値するもの</em>だけに。</h1>
-        <p className="lead">教材を、移動中に聴く講義と、机で解くたった一問へ。選択肢を減らし、深く考える時間を守ります。</p>
-      </header>
+  return <main>
+    <header className="hero">
+      <div className="brand"><Aperture complete={Boolean(state?.focus)} /><span>シ ボ リ</span></div>
+      {restored && <a className="resume-chip" href="#focus" onClick={() => void replan()}>前回の現在地から再開 →</a>}
+      <p className="eyebrow">FOCUS PORTFOLIO FOR LEARNING</p>
+      <h1>学びたいを、<br /><em>次のひとつ</em>に絞る。</h1>
+      <p className="lead">興味から始めても、目標から始めてもいい。Shiboriは、到達状態・学習経路・理解状態をつなぎ、いま集中する一つを提案します。</p>
+    </header>
 
-      <section>
-        <SectionTitle number="00">あなたのこと</SectionTitle>
-        <form className="context-grid" onSubmit={saveContext}>
-          <label><span>WHAT YOU DO</span>何をしている人？<input required value={context.role} onChange={(e) => setContext({ ...context, role: e.target.value })} placeholder="エンジニア兼PM" /></label>
-          <label><span>WHAT TO LEARN</span>何を学びたい？<input required value={context.goal} onChange={(e) => setContext({ ...context, goal: e.target.value })} placeholder="統計を学びたい" /></label>
-          <label><span>WHY NOW</span>なぜ？<input required value={context.why} onChange={(e) => setContext({ ...context, why: e.target.value })} placeholder="A/Bテストを設計したい" /></label>
-          <button className="text-button" type="submit">{contextSaved ? "✓ コンテキスト保存済み" : "この内容を覚える →"}</button>
-        </form>
-      </section>
-
-      <section>
-        <SectionTitle number="01">教材を入れる</SectionTitle>
-        <div className="material-card">
-          <div className="material-actions"><span>TEXT INTAKE</span><button type="button" onClick={() => setMaterial(sampleMaterial)}>サンプル教材を入れる</button></div>
-          <textarea value={material} onChange={(e) => setMaterial(e.target.value)} placeholder="ここに教材テキストを貼り付けてください。段落を残すと、より正確に仕分けできます。" />
-          <div className="intake-note"><span>PDF・画像は本番版で対応予定</span><span>{material.length.toLocaleString()}文字</span></div>
-        </div>
+    <section>
+      <SectionTitle number="00" note="実用性や期限がなくても、知りたい気持ちは十分な出発点です。">学習目的</SectionTitle>
+      <form className="purpose-form" onSubmit={begin}>
+        <label className="wide"><span>LEARNING PURPOSE *</span>いま、何を学びたい？<input required value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="統計をもっと知りたい" /></label>
+        <label><span>YOUR ACTIVITY</span>ふだん何をしている？<input value={role} onChange={(e) => setRole(e.target.value)} placeholder="エンジニア兼PM" /></label>
+        <label><span>WHY / CURIOSITY</span>なぜ気になっている？<input value={why} onChange={(e) => setWhy(e.target.value)} placeholder="純粋に面白そう、でも大丈夫" /></label>
+        <label className="wide"><span>OPTIONAL CAN</span>できるようになりたいことがあれば<input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="A/Bテストの結果を根拠つきで判断できる（あとで決めてもOK）" /></label>
+        <details className="material-disclosure"><summary>手元の教材も使う（任意）</summary><div className="material-actions"><button type="button" onClick={() => setMaterial(sampleMaterial)}>サンプル教材を入れる</button><span>{material.length.toLocaleString()}文字</span></div><textarea value={material} onChange={(e) => setMaterial(e.target.value)} placeholder="教材テキストを貼り付けると、集中先に合わせて耳と机へ再編集します。" /></details>
         {error && <p className="error" role="alert">{error}</p>}
-        <button className="shiboru-button" onClick={project} disabled={loading}><Aperture active={loading} />{loading ? "集中の配分を考えています…" : projection ? "もう一度、絞る" : "この教材を、絞る"}</button>
-      </section>
+        <button className="shiboru-button" disabled={loading}><Aperture active={loading} />{loading ? "学びの現在地を見ています…" : state ? "学びを組み直す" : "次のひとつを、絞る"}</button>
+      </form>
+    </section>
 
-      <section id="allocation" className={!projection ? "muted-section" : ""}>
-        <SectionTitle number="02">選択 — 仕分け結果</SectionTitle>
-        {!projection ? <p className="empty-state">教材を絞ると、段落ごとの集中コストがここに現れます。</p> : <>
-          {projection.source === "demo" && <p className="demo-notice">デモモード：OPENAI_API_KEYを設定するとGPT-5.6で仕分けます。</p>}
-          <div className="segments">{projection.segments.map((segment, index) => <article className={`segment ${segment.mode}`} key={`${segment.text}-${index}`}>
-            <div className="segment-index">{String(index + 1).padStart(2, "0")}</div>
-            <div><span className="mode-tag">{segment.mode === "ear" ? "耳 / LISTEN" : "机 / FOCUS"}</span><h3>{segment.text}</h3><p>{segment.reason}</p></div>
-            <button onClick={() => reportGap(segment)}>わからなかった</button>
-          </article>)}</div>
-        </>}
-      </section>
+    <section id="path" className={!state ? "muted-section" : ""}>
+      <SectionTitle number="01" note="一本道と決めつけず、分からない関係は分からないまま示します。">学習経路と現在地</SectionTitle>
+      {!state ? <p className="empty-state">学習目的を入れると、探索または到達状態への経路が現れます。</p> : state.phase === "exploring" ? <div className="explore-state"><span>EXPLORING</span><h3>いまは探索中</h3><p>まず一度学んでみて、何を「できる」にしたいか見つけられます。到達状態を今決める必要はありません。</p><div className="target-later"><input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="見えてきたCanをここに置く" /><button onClick={establishTarget}>この到達状態で経路をつくる</button></div></div> : <>
+        <div className="target-state"><span>CAN / 到達状態</span><strong>{state.targetState}</strong></div>
+        <div className="path-list">{state.path.map((node, index) => <article key={node.id} className={`${node.status} ${node.id === state.currentNodeId ? "current" : ""}`}><span>{String(index + 1).padStart(2, "0")}</span><div><h3>{node.title}</h3><p>{node.dependsOn.length ? `前提: ${node.dependsOn.map((id) => state.path.find((item) => item.id === id)?.title ?? id).join(" / ")}` : "前提なし、または未確認"}</p></div><em>{node.id === state.currentNodeId ? "現在地" : statusLabel(node.status)}</em></article>)}</div>
+      </>}
+    </section>
 
-      <section className={!projection ? "muted-section" : ""}>
-        <SectionTitle number="03">今日の配分</SectionTitle>
-        {!projection ? <p className="empty-state">今日は「聴く」と「一問」だけ。仕分け後に配ります。</p> : <div className="allocation">
-          <article className="ear-card"><span className="card-label">EAR · すきま時間</span><h3>今日の3分講義</h3><p className="script">{projection.earScript}</p><div className="audio-row"><button onClick={playLecture} disabled={audioLoading}>{audioLoading ? "生成中…" : "▶ 講義を再生"}</button><span>AIが生成した音声です</span></div>{audioUrl && <audio ref={audioRef} src={audioUrl} controls />}</article>
-          <article className="desk-card"><span className="card-label">DESK · 机の時間</span><h3>今日は、この1問。</h3><p className="problem">{projection.deskTask.problem}</p><div className="why"><span>WHY THIS ONE</span>{projection.deskTask.why}</div><label className="answer-field"><span>YOUR THINKING</span>考えた途中を残す<textarea value={deskAnswer} onChange={(event) => { setDeskAnswer(event.target.value); setEvaluation(null); setEvaluationError(""); }} placeholder="計算式と、なぜそう判断したかを書いてください。" /></label>{evaluationError && <p className="inline-error" role="alert">{evaluationError}</p>}<button className="evaluate-button" onClick={evaluateAnswer} disabled={evaluationLoading}>{evaluationLoading ? "考え方を見ています…" : evaluation ? "もう一度、確かめる" : "この考え方を確かめる"}</button>{evaluation && <div className={`evaluation ${evaluation.verdict}`}><span>{evaluation.verdict === "mastered" ? "定着 / MASTERED" : "もう一歩 / RETRY"}</span><p>{evaluation.feedback}</p><details><summary>模範解答を見る</summary><p>{evaluation.modelAnswer}</p></details><strong>次の一手</strong><p>{evaluation.nextAction}</p></div>}</article>
-        </div>}
-        <p className="rss-note">本番版では耳パートをあなた専用のポッドキャストフィードへ配信します。</p>
-      </section>
+    <section id="focus" className={!state?.focus ? "muted-section" : ""}>
+      <SectionTitle number="02" note="おすすめは一つ。ただし、決めるのはあなたです。">次の集中先</SectionTitle>
+      {!state?.focus ? <p className="empty-state">現在地が分かると、次に集中する一つを提案します。</p> : <div className={`focus-card ${state.focus.kind}`}><span>{state.focus.kind === "explore" ? "探索のひとつ" : state.focus.kind === "reinforce" ? "おすすめの補強" : "次のひとつ"}</span><h3>{state.focus.title}</h3><p>{state.focus.reason}</p><button onClick={() => replan()}>別のおすすめを見る</button></div>}
+      {state && <form className="other-focus" onSubmit={selectAnotherFocus}><label><span>OR CHOOSE YOURSELF</span>別の学びを選ぶ<input name="focus" placeholder="今はこれを学ぶ" /></label><button>この学びを選ぶ</button></form>}
+    </section>
 
-      <section>
-        <SectionTitle number="04">抜けマップ</SectionTitle>
-        {gaps.filter((gap) => !gap.resolved).length === 0 ? <p className="empty-state">まだ抜けは見つかっていません。「わからなかった」が次の講義を賢くします。</p> : <div className="gap-list">{gaps.filter((gap) => !gap.resolved).map((gap) => <article key={gap.id}><span>{gap.source === "user_reported" ? "あなたから" : "GPT-5.6が検出"}</span><div><h3>{gap.topic}</h3><p>{gap.reason}</p></div><button onClick={() => resolveGap(gap.id)}>理解した ✓</button></article>)}</div>}
-        {gaps.some((gap) => !gap.resolved) && <p className="loop-note">↻ もう一度「絞る」と、この抜けの補講が講義の冒頭に入ります。</p>}
-      </section>
-      <footer><Aperture /><p>SHIBORI<br /><span>Focus on what deserves focus.</span></p></footer>
-    </main>
-  );
+    {projection && <section>
+      <SectionTitle number="03" note="教材は目的ではなく、いまの集中先に使う材料です。">集中先に合わせた教材</SectionTitle>
+      {projection.source === "demo" && <p className="demo-notice">デモモードです。APIキー設定時はGPT-5.6が同じ流れで再編集します。</p>}
+      <div className="allocation"><article className="ear-card"><span className="card-label">EAR · 移動中</span><h3>耳でつかむ</h3><p className="script">{projection.earScript}</p><div className="audio-row"><button onClick={playLecture} disabled={audioLoading}>{audioLoading ? "生成中…" : "▶ 講義を再生"}</button><span>AI生成音声</span></div>{audioUrl && <audio ref={audioRef} src={audioUrl} controls />}</article><article className="desk-card"><span className="card-label">DESK · 机の時間</span><h3>今日は、この1問。</h3><p className="problem">{projection.deskTask.problem}</p><div className="why"><span>WHY THIS ONE</span>{projection.deskTask.why}</div></article></div>
+    </section>}
+
+    <section className={!plan ? "muted-section" : ""}>
+      <SectionTitle number={projection ? "04" : "03"} note="読んだ・聞いたではなく、いま何ができるかを確かめます。">理解確認</SectionTitle>
+      {!plan ? <p className="empty-state">集中先を選ぶと、その一つだけを確かめる問いが現れます。</p> : <div className="check-card"><span>CHECK ONE THING</span><h3>{plan.check.prompt}</h3><p>{plan.check.reason}</p><textarea value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="自分の言葉、計算、判断の理由などを書いてください。" /><button onClick={check} disabled={checking}>{checking ? "いまできることを見ています…" : "理解状態を確かめる"}</button>{result && <div className={`check-result ${result.outcome}`}><strong>{result.outcome === "confirmed" ? "ここは確認できました" : "できた部分を残して、抜けを一つ発見"}</strong><p>{result.summary}</p></div>}</div>}
+    </section>
+
+    <section>
+      <SectionTitle number={projection ? "05" : "04"} note="理由と影響を見て、今補強するか、後にするか選べます。">抜けと補強</SectionTitle>
+      {!openGaps.length ? <p className="empty-state">理解確認で不足が見つかると、元の学びへ戻る場所と一緒に記録します。</p> : <div className="gap-list">{openGaps.map((gap) => <article key={gap.id}><span>{gap.status === "deferred" ? "あとで補強" : "補強おすすめ"}</span><div><h3>{gap.topic}</h3><p>{gap.reason}</p><p><strong>影響:</strong> {gap.impact}</p></div><div className="gap-actions"><button onClick={() => setState(chooseFocus(state!, { id: `reinforce-${gap.id}`, kind: "reinforce", title: gap.topic, reason: `${gap.reason}。${gap.impact}`, nodeId: gap.returnNodeId }))}>今、補強する</button><button onClick={() => setState(deferGap(state!, gap.id))}>あとで</button><button onClick={() => setState(completeReinforcement(state!, gap.id))}>補強を終えて戻る</button></div></article>)}</div>}
+    </section>
+    <footer><Aperture /><p>SHIBORI<br /><span>Focus on what deserves focus.</span></p></footer>
+  </main>;
 }
