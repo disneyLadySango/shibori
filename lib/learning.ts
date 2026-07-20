@@ -15,7 +15,7 @@ const pathNodeSchema = z.object({
   status: z.enum(["unknown", "unconfirmed", "confirmed", "gap"]),
 });
 
-const stateSchema = z.object({
+export const learningStateSchema = z.object({
   version: z.literal(2),
   purpose: z.object({
     id: z.string(),
@@ -140,5 +140,5 @@ export function completeReinforcement(state: LearningState, gapId: string): Lear
 }
 
 export function resumeLearning(serialized: string): LearningState {
-  return stateSchema.parse(JSON.parse(serialized));
+  return learningStateSchema.parse(JSON.parse(serialized));
 }

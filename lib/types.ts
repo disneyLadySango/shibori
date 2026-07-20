@@ -95,3 +95,16 @@ export type LearningState = {
   gaps: LearningGap[];
   updatedAt: string;
 };
+
+export type LearningPlanProposal = {
+  mode: "exploring" | "learning";
+  targetState: string | null;
+  path: LearningPathNode[];
+  currentNodeId: string | null;
+  focus: FocusRecommendation;
+  check: {
+    nodeId: string | null;
+    prompt: string;
+    reason: string;
+  };
+};
