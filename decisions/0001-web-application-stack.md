@@ -1,13 +1,13 @@
 # ADR-0001: Webアプリケーション技術スタック
 
-- Status: observed
+- Status: accepted
 - Date: 2026-07-20
 
 ## Context
 
 既存射影は、単一ユーザーがブラウザから利用する短期ハッカソン成果物として作られている。サーバー側で外部認証情報を保持し、同じコードベースで対話体験とサーバー処理を提供する必要があった。
 
-## Observed decision
+## Decision
 
 Next.js App Router、React、TypeScriptを利用し、一つのアプリケーションとして射影する。
 

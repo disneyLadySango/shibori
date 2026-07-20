@@ -1,13 +1,13 @@
 # ADR-0004: 軽い集中向け音声生成
 
-- Status: observed
+- Status: accepted
 - Date: 2026-07-20
 
 ## Context
 
 軽い集中で概念をつかむ体験を検証するため、生成した語りを音声として利用するHowが選ばれた。言語モデル判断とは異なる専用能力が必要である。
 
-## Observed decision
+## Decision
 
 OpenAIの音声合成モデルを利用し、AI生成音声であることを学習者へ明示する。
 
