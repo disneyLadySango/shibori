@@ -11,8 +11,10 @@
 
 ## Q-002 学習目的と到達状態の範囲
 
-- state: `open`
+- state: `resolved`
 - question: 期限のない探究も学習目的として同等に扱うか。到達状態には、理解確認できる表現を必須とするか。
+- answer: 期限や実用性がなくても、知りたいという欲求だけで学習目的として扱う。優先度も下げない。学習目的だけで始められ、到達状態は後から考えられる。到達状態を置く場合は、Willではなく「〜できる」というCanで表す。
+- reflected_in: `../1-language/glossary.md` revision 3, `../3-ac/backlog/US-001/AC-001.md` revision 3
 
 ## Q-003 学習目的間の優先順位
 
