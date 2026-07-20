@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { projectMaterial } from "@/lib/openai";
-import { createDemoProjection } from "@/lib/shibori";
+import { createDemoProjection, sampleMaterial } from "@/lib/shibori";
 
 const requestSchema = z.object({
   context: z.object({ role: z.string().min(1), goal: z.string().min(1), why: z.string().min(1), updatedAt: z.string() }),
@@ -18,6 +18,12 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: "入力内容を確認してください。" }, { status: 400 });
 
   if (!process.env.OPENAI_API_KEY) {
+    if (parsed.data.material.trim() !== sampleMaterial.trim()) {
+      return NextResponse.json(
+        { error: "任意の教材を仕分けるにはOPENAI_API_KEYが必要です。サンプル教材ではデモ動線を確認できます。" },
+        { status: 503 },
+      );
+    }
     return NextResponse.json(createDemoProjection(parsed.data.context, parsed.data.gaps));
   }
 

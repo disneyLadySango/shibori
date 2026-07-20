@@ -22,9 +22,9 @@ Devpost requires a public YouTube video shorter than three minutes. Record at 10
 
 ## 1:08–1:35 — Allocation
 
-**Screen:** Scroll to ear and desk cards. Play the audio.
+**Screen:** Scroll to ear and desk cards. Play the audio, then enter the z-test reasoning and evaluate it.
 
-> 耳カードは数式を語りへ変え、このユーザーにはA/Bテストの例えを使います。OpenAIの音声APIで日本語講義を再生します。机カードは選択肢を並べず、今日やる一問だけを提示します。
+> 耳カードは数式を語りへ変え、このユーザーにはA/Bテストの例えを使います。OpenAIの音声APIで日本語講義を再生します。机カードは選択肢を並べず、今日やる一問だけを提示します。途中の考えを書くと、GPT-5.6が答えだけでなく推論を評価し、次の一手を一つ返します。
 
 ## 1:35–2:02 — Feedback loop
 

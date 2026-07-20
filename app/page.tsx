@@ -3,10 +3,10 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 
 import { sampleMaterial } from "@/lib/shibori";
-import type { GapEntry, Projection, UserContext } from "@/lib/types";
+import type { DeskEvaluation, GapEntry, LearningSession, Projection, UserContext } from "@/lib/types";
 
 const emptyContext: UserContext = { role: "", goal: "", why: "", updatedAt: "" };
-const storageKeys = { context: "shibori-context", gaps: "shibori-gaps" };
+const storageKeys = { context: "shibori-context", gaps: "shibori-gaps", session: "shibori-session" };
 
 function Aperture({ active, complete }: { active?: boolean; complete?: boolean }) {
   return (
@@ -34,6 +34,11 @@ export default function Home() {
   const [audioLoading, setAudioLoading] = useState(false);
   const [audioUrl, setAudioUrl] = useState("");
   const [contextSaved, setContextSaved] = useState(false);
+  const [deskAnswer, setDeskAnswer] = useState("");
+  const [evaluation, setEvaluation] = useState<DeskEvaluation | null>(null);
+  const [evaluationLoading, setEvaluationLoading] = useState(false);
+  const [evaluationError, setEvaluationError] = useState("");
+  const [sessionRestored, setSessionRestored] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
@@ -41,17 +46,33 @@ export default function Home() {
       try {
         const savedContext = localStorage.getItem(storageKeys.context);
         const savedGaps = localStorage.getItem(storageKeys.gaps);
+        const savedSession = localStorage.getItem(storageKeys.session);
         if (savedContext) { setContext(JSON.parse(savedContext)); setContextSaved(true); }
         if (savedGaps) setGaps(JSON.parse(savedGaps));
+        if (savedSession) {
+          const session: LearningSession = JSON.parse(savedSession);
+          setMaterial(session.material);
+          setProjection(session.projection);
+          setDeskAnswer(session.deskAnswer);
+          setEvaluation(session.evaluation);
+          setSessionRestored(true);
+        }
       } catch {
         localStorage.removeItem(storageKeys.context);
         localStorage.removeItem(storageKeys.gaps);
+        localStorage.removeItem(storageKeys.session);
       }
     });
     return () => cancelAnimationFrame(frame);
   }, []);
 
   useEffect(() => () => { if (audioUrl) URL.revokeObjectURL(audioUrl); }, [audioUrl]);
+
+  useEffect(() => {
+    if (!projection) return;
+    const session: LearningSession = { material, projection, deskAnswer, evaluation, updatedAt: new Date().toISOString() };
+    localStorage.setItem(storageKeys.session, JSON.stringify(session));
+  }, [deskAnswer, evaluation, material, projection]);
 
   function saveContext(event: FormEvent) {
     event.preventDefault();
@@ -63,12 +84,16 @@ export default function Home() {
     setError("");
     if (!context.role || !context.goal || !context.why) { setError("先に、あなたのことを3つ教えてください。"); return; }
     if (material.trim().length < 30) { setError("30文字以上の教材を入れてください。"); return; }
+    const activeContext = { ...context, updatedAt: new Date().toISOString() };
+    setContext(activeContext); setContextSaved(true);
+    localStorage.setItem(storageKeys.context, JSON.stringify(activeContext));
     if (audioUrl) { URL.revokeObjectURL(audioUrl); setAudioUrl(""); }
-    setLoading(true); setProjection(null);
+    setLoading(true);
     try {
-      const response = await fetch("/api/project", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context, material, gaps }) });
+      const response = await fetch("/api/project", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context: activeContext, material, gaps }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error);
+      setDeskAnswer(""); setEvaluation(null); setSessionRestored(false);
       setProjection(body);
       const detected: GapEntry[] = body.gaps.map((gap: { topic: string; reason: string }) => ({ id: crypto.randomUUID(), ...gap, source: "detected", resolved: false }));
       const next = [...gaps, ...detected.filter((gap) => !gaps.some((existing) => existing.topic === gap.topic))];
@@ -102,10 +127,31 @@ export default function Home() {
     finally { setAudioLoading(false); }
   }
 
+  async function evaluateAnswer() {
+    if (!projection || deskAnswer.trim().length < 2) { setEvaluationError("考えたことを、途中まででも書いてください。"); return; }
+    setEvaluationLoading(true); setEvaluationError("");
+    try {
+      const response = await fetch("/api/evaluate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ context, problem: projection.deskTask.problem, answer: deskAnswer }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error);
+      setEvaluation(body);
+      if (body.gap && !gaps.some((gap) => gap.topic === body.gap.topic && !gap.resolved)) {
+        const next = [...gaps, { id: crypto.randomUUID(), ...body.gap, source: "user_reported" as const, resolved: false }];
+        setGaps(next); localStorage.setItem(storageKeys.gaps, JSON.stringify(next));
+      }
+    } catch (caught) { setEvaluationError(caught instanceof Error ? caught.message : "回答を評価できませんでした。"); }
+    finally { setEvaluationLoading(false); }
+  }
+
   return (
     <main>
       <header className="hero">
         <div className="brand"><Aperture complete={Boolean(projection)} /><span>シ ボ リ</span></div>
+        {sessionRestored && <a className="resume-chip" href="#allocation">前回の「今日の配分」を再開 →</a>}
         <p className="eyebrow">FOCUS PORTFOLIO MANAGER</p>
         <h1>あなたの集中を、<br /><em>集中に値するもの</em>だけに。</h1>
         <p className="lead">教材を、移動中に聴く講義と、机で解くたった一問へ。選択肢を減らし、深く考える時間を守ります。</p>
@@ -132,7 +178,7 @@ export default function Home() {
         <button className="shiboru-button" onClick={project} disabled={loading}><Aperture active={loading} />{loading ? "集中の配分を考えています…" : projection ? "もう一度、絞る" : "この教材を、絞る"}</button>
       </section>
 
-      <section className={!projection ? "muted-section" : ""}>
+      <section id="allocation" className={!projection ? "muted-section" : ""}>
         <SectionTitle number="02">選択 — 仕分け結果</SectionTitle>
         {!projection ? <p className="empty-state">教材を絞ると、段落ごとの集中コストがここに現れます。</p> : <>
           {projection.source === "demo" && <p className="demo-notice">デモモード：OPENAI_API_KEYを設定するとGPT-5.6で仕分けます。</p>}
@@ -148,7 +194,7 @@ export default function Home() {
         <SectionTitle number="03">今日の配分</SectionTitle>
         {!projection ? <p className="empty-state">今日は「聴く」と「一問」だけ。仕分け後に配ります。</p> : <div className="allocation">
           <article className="ear-card"><span className="card-label">EAR · すきま時間</span><h3>今日の3分講義</h3><p className="script">{projection.earScript}</p><div className="audio-row"><button onClick={playLecture} disabled={audioLoading}>{audioLoading ? "生成中…" : "▶ 講義を再生"}</button><span>AIが生成した音声です</span></div>{audioUrl && <audio ref={audioRef} src={audioUrl} controls />}</article>
-          <article className="desk-card"><span className="card-label">DESK · 机の時間</span><h3>今日は、この1問。</h3><p className="problem">{projection.deskTask.problem}</p><div className="why"><span>WHY THIS ONE</span>{projection.deskTask.why}</div></article>
+          <article className="desk-card"><span className="card-label">DESK · 机の時間</span><h3>今日は、この1問。</h3><p className="problem">{projection.deskTask.problem}</p><div className="why"><span>WHY THIS ONE</span>{projection.deskTask.why}</div><label className="answer-field"><span>YOUR THINKING</span>考えた途中を残す<textarea value={deskAnswer} onChange={(event) => { setDeskAnswer(event.target.value); setEvaluation(null); setEvaluationError(""); }} placeholder="計算式と、なぜそう判断したかを書いてください。" /></label>{evaluationError && <p className="inline-error" role="alert">{evaluationError}</p>}<button className="evaluate-button" onClick={evaluateAnswer} disabled={evaluationLoading}>{evaluationLoading ? "考え方を見ています…" : evaluation ? "もう一度、確かめる" : "この考え方を確かめる"}</button>{evaluation && <div className={`evaluation ${evaluation.verdict}`}><span>{evaluation.verdict === "mastered" ? "定着 / MASTERED" : "もう一歩 / RETRY"}</span><p>{evaluation.feedback}</p><details><summary>模範解答を見る</summary><p>{evaluation.modelAnswer}</p></details><strong>次の一手</strong><p>{evaluation.nextAction}</p></div>}</article>
         </div>}
         <p className="rss-note">本番版では耳パートをあなた専用のポッドキャストフィードへ配信します。</p>
       </section>

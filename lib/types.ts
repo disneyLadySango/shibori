@@ -24,3 +24,20 @@ export type Projection = {
   gaps: Array<Pick<GapEntry, "topic" | "reason">>;
   source?: "gpt-5.6" | "demo";
 };
+
+export type DeskEvaluation = {
+  verdict: "mastered" | "retry";
+  feedback: string;
+  modelAnswer: string;
+  nextAction: string;
+  gap: { topic: string; reason: string } | null;
+  source?: "gpt-5.6" | "demo";
+};
+
+export type LearningSession = {
+  material: string;
+  projection: Projection;
+  deskAnswer: string;
+  evaluation: DeskEvaluation | null;
+  updatedAt: string;
+};

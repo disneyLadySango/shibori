@@ -10,7 +10,8 @@
 2. 「サンプル教材を入れる」から「この教材を、絞る」を押します。
 3. 耳3段落、机1段落への仕分けと、3分講義・今日の一問を確認します。
 4. APIキー設定時は「講義を再生」から日本語TTSを再生できます。
-5. 段落の「わからなかった」を押し、もう一度絞ると、講義冒頭に補講が入ります。
+5. 今日の一問へ途中の考えを書き、GPT-5.6の評価・模範解答・次の一手を受け取ります。
+6. 回答のつまずき、または段落の「わからなかった」が抜けマップへ入り、もう一度絞ると講義冒頭に補講が入ります。
 
 ## Setup
 
@@ -25,6 +26,7 @@ npm run dev
 ## OpenAI integration
 
 - `gpt-5.6`: Responses APIを1回呼び出し、Zod由来のstrict structured outputで段落仕分け、講義、今日の一問、前提抜けを同時生成します。
+- `gpt-5.6`: 今日の一問への回答を、最終結果だけでなく途中の考え方まで評価し、次の一手と抜け候補を生成します。
 - `gpt-4o-mini-tts`: Audio Speech APIで日本語MP3を生成します。これはLLM投影ではなく専用音声合成モデルです。
 - APIキーはサーバー側だけで参照し、ブラウザへ渡しません。
 
@@ -42,6 +44,7 @@ Context ──┼─> GPT-5.6 structured projection ─┬─> Ear script ─> T
 Gap map ──┘                                  ├─> One desk task
                                             └─> Detected gaps ─┐
 User: "わからなかった" ───────────────────────────────────────┘
+Desk answer ─> GPT-5.6 reasoning evaluation ─> Feedback / gap ──┘
 ```
 
 ## Build Week submission assets
