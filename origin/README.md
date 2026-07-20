@@ -22,6 +22,8 @@
 
 | 状態 | 意味 |
 | --- | --- |
+| `backlog` | 発見済みだが、現在の課題解決対象として未選択 |
+| `active` | 人間が現在の課題解決対象として選択済み |
 | `proposed` | 人間の確認前。実装根拠にできない |
 | `approved` | 人間が意図として承認済み |
 | `superseded` | 別文書へ置き換え済み。履歴として残す |
@@ -32,7 +34,7 @@
 ## 履歴規則
 
 - 第2層のペインはACが失敗しても削除しない。
-- 観測事実は`2-stories/evidence/`へ、課題は`2-stories/stories/`へ分ける。
+- 観測事実は`2-stories/evidence/`へ、課題は`2-stories/{backlog|active|archive}/`へ分ける。
 - 失敗した具体策と学びは`2-stories/history/`へ残す。
 - 第3層の終了したACは、結果を追記して`3-ac/archive/`へ移す。
 - 第4層も対応するACと同時に`4-test-specs/archive/`へ移す。
