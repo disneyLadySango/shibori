@@ -44,9 +44,10 @@ Status: initial draft, awaiting human approval
 
 1. Approve or edit the glossary.
 2. Choose the primary release slice: Slice A first, or Slice A plus Slice B.
-3. Answer the four intent questions in `origin/2-stories/user-story-map.md`.
-4. Approve or replace the proposed success and retreat thresholds.
-5. Approve the layer 4 test specifications.
-6. Decide which observed ADRs become active pins.
+3. Answer the four intent questions in `origin/2-stories/open-questions.md`.
+4. Approve the release order in `origin/2-stories/story-map.md`.
+5. Approve or replace the success and retreat thresholds owned by each story's AC.
+6. Promote selected layer 4 specifications from backlog after choosing an approach.
+7. Decide which observed ADRs become active pins.
 
 No new projection should be implemented until decisions 1–5 are complete.
