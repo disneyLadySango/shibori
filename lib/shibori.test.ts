@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildProjectionPrompt, createDemoProjection } from "./shibori";
+import { buildEvaluationPrompt, buildProjectionPrompt, createDemoEvaluation, createDemoProjection } from "./shibori";
 
 describe("buildProjectionPrompt", () => {
   it("combines material, context, and unresolved gaps", () => {
@@ -14,6 +14,28 @@ describe("buildProjectionPrompt", () => {
     expect(prompt).toContain("仮説検定の教材");
     expect(prompt).toContain("標準誤差");
     expect(prompt).toContain("補講パートを講義スクリプト冒頭に挿入");
+  });
+});
+
+describe("desk task evaluation", () => {
+  it("asks GPT-5.6 to judge reasoning in the learner context", () => {
+    const prompt = buildEvaluationPrompt({
+      context: { role: "PM", goal: "統計", why: "A/Bテスト", updatedAt: "now" },
+      problem: "z統計量を求めて判断してください",
+      answer: "zは2なので棄却する",
+    });
+
+    expect(prompt).toContain("zは2なので棄却する");
+    expect(prompt).toContain("A/Bテスト");
+    expect(prompt).toContain("最終結論だけでなく途中の考え方");
+  });
+
+  it("turns an incomplete demo answer into an actionable gap", () => {
+    const result = createDemoEvaluation("計算方法がわかりません");
+
+    expect(result.verdict).toBe("retry");
+    expect(result.gap?.topic).toBe("z統計量の計算");
+    expect(result.nextAction).toBeTruthy();
   });
 });
 
