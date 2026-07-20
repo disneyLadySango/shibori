@@ -49,6 +49,13 @@ describe("US-002 current position", () => {
     ]);
     expect(state.path.find((node) => node.id === "unknown")?.status).toBe("unknown");
   });
+
+  it("keeps a current position while dependency knowledge is still unknown", () => {
+    const state = setLearningPlan(createLearningState({ purpose: "統計", role: "", why: "" }), "判断できる", [
+      { id: "unknown", title: "関係を確認する", dependsOn: [], status: "unknown" },
+    ]);
+    expect(state.currentNodeId).toBe("unknown");
+  });
 });
 
 describe("US-003 one focus", () => {

@@ -63,6 +63,7 @@ function now() {
 function firstActionableNode(path: LearningPathNode[]) {
   return path.find((node) => node.status === "unconfirmed" && node.dependsOn.every((id) => path.find((candidate) => candidate.id === id)?.status === "confirmed"))
     ?? path.find((node) => node.status === "unconfirmed")
+    ?? path.find((node) => node.status === "unknown")
     ?? null;
 }
 
