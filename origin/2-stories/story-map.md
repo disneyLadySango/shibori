@@ -1,7 +1,7 @@
 # Shibori user story map
 
 - state: `proposed`
-- revision: `1`
+- revision: `2`
 - updated: `2026-07-20`
 
 このファイルだけが、ユーザーストーリー全体の順序、優先順位、リリーススライスを統括する。個別ストーリーのWho / Pain / Whyは`backlog/`、`active/`、`archive/`のUS-ID文書を正とする。
@@ -24,10 +24,16 @@
 
 ## Release roadmap
 
-### Slice A — 次の一回に迷わない
+### Slice A — 理解状態から次の一回を更新する
 
-- stories: US-001〜US-008, US-014〜US-025, US-027〜US-030
-- boundary: 一つの学習目的
+- stories: US-001, US-002, US-003, US-005, US-006, US-007, US-008
+- boundary: 一つの学習目的について、目的と現在地から集中先を一つ決め、理解証拠または抜けによって次の集中先を更新し、中断後も再開できる
+- state: `active`
+
+### Slice A2 — 一周の判断品質を高める
+
+- stories: US-004, US-014〜US-025, US-027〜US-030
+- boundary: Slice Aで成立した一周へ、集中資源、説明可能性、再挑戦、訂正を加える
 - state: `backlog`
 
 ### Slice B — 複数の学習目的でも分散しない
@@ -42,10 +48,11 @@
 - boundary: 学習量ではなく学習目的への接近を振り返る
 - state: `backlog`
 
-## Priority decision pending
+## Priority decision
 
-Q-001への回答により、最初の承認対象をSlice Aのみ、またはSlice A + Slice Bに確定する。
+最初の承認対象はSlice Aのみとする。Slice Aの成果基準と検証方法が承認されるまで、Slice A2以降をactiveへ移さない。
 
 ## Revision history
 
 - revision 1, 2026-07-20: 旧単一文書から、個別ストーリーを参照する唯一のストーリーマップへ再構成。
+- revision 2, 2026-07-20: 最初の課題解決対象を7ストーリーのSlice Aに絞り、残りをSlice A2以降のbacklogへ保持。
