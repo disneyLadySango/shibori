@@ -16,6 +16,10 @@ import {
   explainGapRelation,
   prioritizeOpenGaps,
   setLearningPlan,
+  summarizeRemaining,
+  updateLearningRhythm,
+  reconsiderTarget,
+  rejectFocus,
 } from "./learning";
 import type { LearningPathNode } from "./types";
 
@@ -39,6 +43,29 @@ describe("US-001 exploration", () => {
     expect(exploring.phase).toBe("exploring");
     expect(exploring.focus?.title).toContain("重ね合わせ");
     expect(setLearningPlan(exploring, "重ね合わせを自分の言葉で説明できる", nodes).phase).toBe("learning");
+  });
+});
+
+describe("Wave 3 context adaptation", () => {
+  it("separates unknown remainder from observed gaps", () => {
+    const state = setLearningPlan(createLearningState({ purpose: "統計", role: "", why: "" }), "判断できる", nodes);
+    const remaining = summarizeRemaining({ ...state, path: state.path.map((node, index) => ({ ...node, status: index === 0 ? "gap" : "unconfirmed" })) });
+    expect(remaining.gaps).toHaveLength(1); expect(remaining.unconfirmed).toHaveLength(2); expect(remaining.note).toContain("未確認");
+  });
+  it("updates ongoing rhythm without rewriting allocations", () => {
+    const state = { ...createLearningState({ purpose: "統計", role: "", why: "" }), allocations: [{ id: "a", depth: "deep" as const, minutes: 30, note: "過去", recordedAt: "before" }] };
+    const updated = updateLearningRhythm(state, { lightMinutes: 20, deepMinutes: 10, note: "通勤変更" });
+    expect(updated.rhythm?.deepMinutes).toBe(10); expect(updated.allocations).toEqual(state.allocations);
+  });
+  it("changes one focus with its reason without manufacturing a gap", () => {
+    const state = chooseFocus(setLearningPlan(createLearningState({ purpose: "統計", role: "", why: "" }), "判断できる", nodes), { id: "f", kind: "learn", title: "標本分布", reason: "推奨", nodeId: "foundation" });
+    const changed = rejectFocus(state, "今日は計算できない", "change");
+    expect(changed.focusDecisions[0].reason).toBe("今日は計算できない"); expect(changed.focus?.nodeId).not.toBe("foundation"); expect(changed.gaps).toEqual([]);
+  });
+  it("revises the target while preserving prior learning evidence", () => {
+    const checked = applyCheckResult(setLearningPlan(createLearningState({ purpose: "統計", role: "", why: "" }), "判断できる", nodes), { nodeId: "foundation", outcome: "confirmed", summary: "説明できた", nextAction: "次", gap: null });
+    const revised = reconsiderTarget(checked, "実験を設計できる", ["foundation"]);
+    expect(revised.targetRevisions[0].previous).toBe("判断できる"); expect(revised.path[0].status).toBe("confirmed"); expect(revised.checkHistory).toEqual(checked.checkHistory); expect(revised.targetRevisions[0].reviewNodeIds).toEqual(["p-value", "decision"]);
   });
 });
 
