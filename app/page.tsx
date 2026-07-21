@@ -4,10 +4,15 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 
 import {
   applyCheckResult,
+  challengeUnderstanding,
   chooseFocus,
   completeReinforcement,
   createLearningState,
   deferGap,
+  explainFocus,
+  learningDataPolicy,
+  recordDependencyCorrection,
+  recordPositionCorrection,
   setLearningPlan,
 } from "@/lib/learning";
 import {
@@ -75,6 +80,8 @@ export default function Home() {
   const [materialMinutes, setMaterialMinutes] = useState(15);
   const [materialAttention, setMaterialAttention] = useState<"light" | "deep">("light");
   const [prioritizing, setPrioritizing] = useState(false);
+  const [correctionReason, setCorrectionReason] = useState("");
+  const [challengeReason, setChallengeReason] = useState("");
   const [error, setError] = useState("");
   const [restored, setRestored] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -113,7 +120,7 @@ export default function Home() {
     const proposal = body as LearningPlanProposal;
     let planned = nextState;
     if (proposal.mode === "learning" && proposal.targetState) planned = setLearningPlan(nextState, proposal.targetState, proposal.path);
-    planned = chooseFocus(planned, proposal.focus);
+    planned = chooseFocus(planned, { ...proposal.focus, source: body.source === "demo" ? "demo" : "personalized" });
     commitLearningState(planned, add); setPlan(proposal); setRestored(false);
     if (clearCheck) { setResult(null); setAnswer(""); }
     return planned;
@@ -167,7 +174,8 @@ export default function Home() {
       const response = await fetch("/api/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state, prompt: plan.check.prompt, answer }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error);
-      const checked = body as UnderstandingCheckResult;
+      const pendingChallenge = state.checkChallenges.findLast((challenge) => challenge.status === "pending");
+      const checked = { ...(body as UnderstandingCheckResult), nodeId: pendingChallenge?.nodeId ?? (body as UnderstandingCheckResult).nodeId };
       setResult(checked);
       if (state.phase === "learning") {
         const updated = applyCheckResult(state, checked);
@@ -184,7 +192,31 @@ export default function Home() {
     const data = new FormData(event.currentTarget);
     const title = String(data.get("focus") ?? "").trim();
     if (!title) return;
-    commitLearningState(chooseFocus(state, { id: crypto.randomUUID(), kind: "learn", title, reason: "学習者が今取り組むと選んだ集中先です。", nodeId: null }));
+    commitLearningState(chooseFocus(state, { id: crypto.randomUUID(), kind: "learn", title, reason: "学習者が今取り組むと選んだ集中先です。", nodeId: null, source: "learner" }));
+  }
+
+  function correctPosition(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!state || !correctionReason.trim()) return;
+    const data = new FormData(event.currentTarget);
+    const nodeId = String(data.get("nodeId"));
+    const corrected = data.get("kind") === "dependency"
+      ? recordDependencyCorrection(state, { nodeId, dependsOn: String(data.get("dependsOn") ?? "").split(",").filter(Boolean), reason: correctionReason })
+      : recordPositionCorrection(state, { nodeId, reason: correctionReason });
+    commitLearningState(corrected); setCorrectionReason(""); setResult(null); setAnswer("");
+  }
+
+  function challengeCheck(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!state?.lastCheck || !challengeReason.trim()) return;
+    const challenged = challengeUnderstanding(state, challengeReason);
+    const node = state.path.find((item) => item.id === state.lastCheck?.nodeId);
+    commitLearningState(challenged); setChallengeReason(""); setResult(null); setAnswer("");
+    setPlan((current) => current ? { ...current, check: {
+      nodeId: state.lastCheck!.nodeId,
+      prompt: `「${node?.title ?? "前回の集中先"}」について、前回の判定を見直せるよう別の説明・計算・具体例で示してください。`,
+      reason: "元の確認結果を残したまま、追加の理解確認で再評価するためです。",
+    } } : current);
   }
 
   function choosePurpose(purposeId: string) {
@@ -269,6 +301,8 @@ export default function Home() {
 
   const openGaps = state?.gaps.filter((gap) => gap.status !== "resolved") ?? [];
   const latestContextChange = portfolio?.contextChanges.at(-1);
+  const focusExplanation = state?.focus ? explainFocus(state) : null;
+  const pendingChallenge = state?.checkChallenges.findLast((challenge) => challenge.status === "pending");
 
   return <main>
     <header className="hero">
@@ -292,6 +326,7 @@ export default function Home() {
           <button type="button" onClick={() => void recommendPurpose()} disabled={prioritizing}>{prioritizing ? "目的間の配分を考えています…" : "次の学習目的を一つおすすめ"}</button>
         </div>}
         {portfolio.recommendation && <article className="purpose-recommendation"><span>GPT-5.6 RECOMMENDS ONE</span><h3>{portfolio.purposes.find((item) => item.purpose.id === portfolio.recommendation?.purposeId)?.purpose.statement}</h3><p>{portfolio.recommendation.reason}</p><small>判断に使ったこと: {portfolio.recommendation.basis.join(" / ")}</small>{portfolio.recommendationHistory.length > 1 && <details><summary>変更前のおすすめと比べる</summary><p>変更前: {portfolio.purposes.find((item) => item.purpose.id === portfolio.recommendationHistory.at(-2)?.purposeId)?.purpose.statement} — {portfolio.recommendationHistory.at(-2)?.reason}</p><p>変更後: {portfolio.recommendation.reason}</p>{latestContextChange && <p>変わった状況: 期限 {latestContextChange.before.deadline || "未設定"} → {latestContextChange.after.deadline || "未設定"} / 重要度 {latestContextChange.before.importance} → {latestContextChange.after.importance} / 利用場面 {latestContextChange.before.usageContext || "未設定"} → {latestContextChange.after.usageContext || "未設定"}</p>}</details>}<div><button type="button" onClick={() => choosePurpose(portfolio.recommendation!.purposeId)}>このおすすめを選ぶ</button><em>別の目的を選んでも、失敗にはなりません。</em></div></article>}
+        <details className="data-transparency"><summary>学習状態の扱いを確認する</summary><div><article><span>RECORD</span><strong>このブラウザに保存</strong><p>{learningDataPolicy.recorded}を保存します。</p></article><article><span>USE</span><strong>次の一つを判断</strong><p>{learningDataPolicy.use}。</p></article><article><span>SHARE</span><strong>共有範囲</strong><p>{learningDataPolicy.sharing}。</p></article></div></details>
       </div>}
       <h3 className="add-purpose-title">{portfolio ? "学習目的をもう一つ加える" : "最初の学習目的"}</h3>
       <form className="purpose-form" onSubmit={begin}>
@@ -310,12 +345,13 @@ export default function Home() {
       {!state ? <p className="empty-state">学習目的を入れると、探索または到達状態への経路が現れます。</p> : state.phase === "exploring" ? <div className="explore-state"><span>EXPLORING</span><h3>いまは探索中</h3><p>まず一度学んでみて、何を「できる」にしたいか見つけられます。到達状態を今決める必要はありません。</p><div className="target-later"><input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="見えてきたCanをここに置く" /><button onClick={establishTarget}>この到達状態で経路をつくる</button></div></div> : <>
         <div className="target-state"><span>CAN / 到達状態</span><strong>{state.targetState}</strong></div>
         <div className="path-list">{state.path.map((node, index) => <article key={node.id} className={`${node.status} ${node.id === state.currentNodeId ? "current" : ""}`}><span>{String(index + 1).padStart(2, "0")}</span><div><h3>{node.title}</h3><p>{node.dependsOn.length ? `前提: ${node.dependsOn.map((id) => state.path.find((item) => item.id === id)?.title ?? id).join(" / ")}` : "前提なし、または未確認"}</p></div><em>{node.id === state.currentNodeId ? "現在地" : statusLabel(node.status)}</em></article>)}</div>
+        <form className="correction-form" onSubmit={correctPosition}><h3>現在地や前提関係が違う？</h3><p>異議だけでは理解状態を変えません。訂正前の判断も履歴に残します。</p><label><span>対象</span><select name="nodeId" defaultValue={state.currentNodeId ?? state.path[0]?.id}>{state.path.map((node) => <option key={node.id} value={node.id}>{node.title}</option>)}</select></label><label><span>この前提へ訂正</span><select name="dependsOn"><option value="">前提なし</option>{state.path.map((node) => <option key={node.id} value={node.id}>{node.title}</option>)}</select></label><input value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} placeholder="違うと思う理由" /><div><button name="kind" value="position">現在地を訂正</button><button name="kind" value="dependency">前提関係を訂正</button></div>{state.positionCorrections.at(-1) && <small>前回の訂正: {state.positionCorrections.at(-1)?.reason}</small>}</form>
       </>}
     </section>
 
     <section id="focus" className={!state?.focus ? "muted-section" : ""}>
       <SectionTitle number="02" note="おすすめは一つ。ただし、決めるのはあなたです。">次の集中先</SectionTitle>
-      {!state?.focus ? <p className="empty-state">現在地が分かると、次に集中する一つを提案します。</p> : <div className={`focus-card ${state.focus.kind}`}><span>{state.focus.kind === "explore" ? "探索のひとつ" : state.focus.kind === "reinforce" ? "おすすめの補強" : "次のひとつ"}</span><h3>{state.focus.title}</h3><p>{state.focus.reason}</p><button onClick={() => replan()}>別のおすすめを見る</button></div>}
+      {!state?.focus ? <p className="empty-state">現在地が分かると、次に集中する一つを提案します。</p> : <div className={`focus-card ${state.focus.kind}`}><span>{state.focus.kind === "explore" ? "探索のひとつ" : state.focus.kind === "reinforce" ? "おすすめの補強" : "次のひとつ"} · {state.focus.source === "learner" ? "あなたの選択" : state.focus.source === "demo" ? "固定デモ" : state.focus.source === "inferred" ? "確認結果からの推定" : "個別判断"}</span><h3>{state.focus.title}</h3><p>{state.focus.reason}</p>{focusExplanation && <details className="focus-basis"><summary>なぜ、この一つ？</summary>{focusExplanation.basis.map((basis) => <p key={basis.label}><strong>{basis.label}</strong><span>{basis.value}</span><em>{({ learner_input: "あなたの入力", confirmed: "確認結果", inferred: "推定", unknown: "判断できない" } as const)[basis.certainty]}</em></p>)}{focusExplanation.uncertainty.map((item) => <small key={item}>{item}</small>)}</details>}<button onClick={() => replan()}>別のおすすめを見る</button></div>}
       {state && <form className="other-focus" onSubmit={selectAnotherFocus}><label><span>OR CHOOSE YOURSELF</span>別の学びを選ぶ<input name="focus" placeholder="今はこれを学ぶ" /></label><button>この学びを選ぶ</button></form>}
     </section>
 
@@ -329,7 +365,7 @@ export default function Home() {
 
     <section className={!plan ? "muted-section" : ""}>
       <SectionTitle number={projection ? "04" : "03"} note="読んだ・聞いたではなく、いま何ができるかを確かめます。">理解確認</SectionTitle>
-      {!plan ? <p className="empty-state">集中先を選ぶと、その一つだけを確かめる問いが現れます。</p> : <div className="check-card"><span>CHECK ONE THING</span><h3>{plan.check.prompt}</h3><p>{plan.check.reason}</p><textarea value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="自分の言葉、計算、判断の理由などを書いてください。" /><button onClick={check} disabled={checking}>{checking ? "いまできることを見ています…" : "理解状態を確かめる"}</button>{result && <div className={`check-result ${result.outcome}`}><strong>{result.outcome === "confirmed" ? "ここは確認できました" : "できた部分を残して、抜けを一つ発見"}</strong><p>{result.summary}</p></div>}</div>}
+      {!plan ? <p className="empty-state">集中先を選ぶと、その一つだけを確かめる問いが現れます。</p> : <div className="check-card"><span>{pendingChallenge ? "RECHECK · 追加の理解確認" : "CHECK ONE THING"}</span><h3>{plan.check.prompt}</h3><p>{plan.check.reason}</p><textarea value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="自分の言葉、計算、判断の理由などを書いてください。" /><button onClick={check} disabled={checking}>{checking ? "いまできることを見ています…" : pendingChallenge ? "追加の確認結果で再評価" : "理解状態を確かめる"}</button>{result && <div className={`check-result ${result.outcome}`}><strong>{result.outcome === "confirmed" ? "ここは確認できました" : "できた部分を残して、抜けを一つ発見"}</strong><p>{result.summary}</p></div>}{state?.lastCheck && !pendingChallenge && <form className="challenge-form" onSubmit={challengeCheck}><label><span>CHALLENGE</span>この判定に異議がある<input value={challengeReason} onChange={(event) => setChallengeReason(event.target.value)} placeholder="見直してほしい理由" /></label><button>追加の理解確認へ</button></form>}{pendingChallenge && <p className="pending-challenge">元の確認結果は残っています。追加の回答をもとに再評価します。</p>}</div>}
     </section>
 
     <section>
