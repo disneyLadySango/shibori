@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 
 import {
   applyCheckResult,
+  assessTargetAchievement,
   challengeUnderstanding,
   chooseFocus,
   completeReinforcement,
@@ -18,6 +19,7 @@ import {
   rejectFocus,
   recordDependencyCorrection,
   recordPositionCorrection,
+  reviewAllocationProgress,
   setLearningPlan,
   summarizeRemaining,
   updateLearningRhythm,
@@ -303,6 +305,12 @@ export default function Home() {
     setPortfolio(reflectOnAllocation(portfolio, state.purpose.id, judgment, reason));
   }
 
+  function decideAchievement() {
+    if (!portfolio || !state) return;
+    const reason = window.prompt("達成と判断する理由を、自分の言葉で残してください")?.trim();
+    if (reason) setPortfolio(setPurposeStatus(portfolio, state.purpose.id, "achieved", reason));
+  }
+
   async function refitMaterial(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!state) return;
@@ -330,6 +338,8 @@ export default function Home() {
   const focusExplanation = state?.focus ? explainFocus(state) : null;
   const pendingChallenge = state?.checkChallenges.findLast((challenge) => challenge.status === "pending");
   const remaining = state ? summarizeRemaining(state) : null;
+  const targetAssessment = state ? assessTargetAchievement(state) : null;
+  const allocationProgress = state ? reviewAllocationProgress(state) : null;
 
   return <main>
     <header className="hero">
@@ -403,7 +413,8 @@ export default function Home() {
     </section>
     {state && <section>
       <SectionTitle number={projection ? "06" : "05"} note="使った集中資源と理解確認の結果は、別の事実として振り返ります。">配分の振り返り</SectionTitle>
-      <div className="allocation-review"><form onSubmit={saveAllocation}><h3>今回使った集中資源</h3><label><span>DEPTH</span>集中の深さ<select name="depth"><option value="ear">耳・ながら</option><option value="desk">机</option><option value="deep">深い集中</option></select></label><label><span>MINUTES</span>時間（分）<input name="minutes" type="number" min="1" required /></label><label><span>NOTE</span>何に使った？<input name="allocationNote" placeholder="教材を読んだ、問題を解いたなど" /></label><button>配分として記録</button></form><div className="allocation-summary"><h3>この目的の記録</h3><strong>{state.allocations.reduce((sum, item) => sum + item.minutes, 0)}分</strong><p>理解確認: {state.checkHistory.length}回（確認できた {state.checkHistory.filter((item) => item.outcome === "confirmed").length}回）</p><small>時間を使っただけでは、理解できたことにはなりません。</small><div><button onClick={() => saveReflection("intentional")}>この偏りは意図した</button><button onClick={() => saveReflection("unintended")}>意図しない偏りだった</button></div>{state.allocationReflection && <p className="reflection-result">{state.allocationReflection.judgment === "intentional" ? "意図した偏り" : "次のおすすめへ反映"}: {state.allocationReflection.reason}</p>}</div></div>
+      {targetAssessment && <article className={`target-assessment ${targetAssessment.status}`}><span>CAN / 到達判断</span><h3>{targetAssessment.status === "ready_for_decision" ? "必要な確認結果がそろいました" : targetAssessment.status === "no_target" ? "到達状態はまだ決まっていません" : targetAssessment.remaining.length ? `残る理解確認 ${targetAssessment.remaining.length}件` : "必要な確認項目をまだ判断できません"}</h3><p>{targetAssessment.reason}</p>{targetAssessment.basis.length > 0 && <p><strong>確認できたこと:</strong> {targetAssessment.basis.join(" / ")}</p>}{targetAssessment.remaining.length > 0 && <details><summary>残る確認を見る</summary>{targetAssessment.remaining.map((item) => <p key={item}>{item}</p>)}</details>}{targetAssessment.status === "ready_for_decision" && state.purpose.status === "active" && <button type="button" onClick={decideAchievement}>自分で達成と判断する</button>}</article>}
+      <div className="allocation-review"><form onSubmit={saveAllocation}><h3>今回使った集中資源</h3><label><span>DEPTH</span>集中の深さ<select name="depth"><option value="ear">耳・ながら</option><option value="desk">机</option><option value="deep">深い集中</option></select></label><label><span>MINUTES</span>時間（分）<input name="minutes" type="number" min="1" required /></label><label><span>NOTE</span>何に使った？<input name="allocationNote" placeholder="教材を読んだ、問題を解いたなど" /></label><button>配分として記録</button></form>{allocationProgress && <div className="allocation-summary"><h3>投入量と到達への接近</h3><strong>{allocationProgress.investedMinutes}分</strong><p>軽い集中 {allocationProgress.byDepth.ear}分 / 机 {allocationProgress.byDepth.desk}分 / 深い集中 {allocationProgress.byDepth.deep}分</p><p>確認できた項目 {allocationProgress.confirmedCount}件 / 判明した抜け {allocationProgress.gapCount}件</p><small>{allocationProgress.judgment}</small><p className="next-allocation">次の配分: {allocationProgress.nextAllocationReason}</p><div><button onClick={() => saveReflection("intentional")}>この偏りは意図した</button><button onClick={() => saveReflection("unintended")}>意図しない偏りだった</button></div>{state.allocationReflection && <p className="reflection-result">{state.allocationReflection.judgment === "intentional" ? "意図した偏り" : "次のおすすめへ反映"}: {state.allocationReflection.reason}</p>}</div>}</div>
     </section>}
     <footer><Aperture /><p>SHIBORI<br /><span>Focus on what deserves focus.</span></p></footer>
   </main>;
