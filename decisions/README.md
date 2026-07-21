@@ -10,4 +10,4 @@
 - `superseded`: 新しいADRに置き換えられた。
 - `rejected`: 採用しない。
 
-現在のADRは、Slice Aの射影を再構築する技術判断として`accepted`である。人間はいつでもピンを抜ける。
+現在のADRは、Slice AおよびSlice Bの射影を再構築する技術判断として`accepted`である。人間はいつでもピンを抜ける。
