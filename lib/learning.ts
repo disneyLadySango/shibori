@@ -6,6 +6,8 @@ import type {
   LearningGap,
   LearningPathNode,
   LearningState,
+  NextMove,
+  GapRelation,
   UnderstandingCheckResult,
 } from "./types";
 
@@ -95,6 +97,49 @@ function firstActionableNode(path: LearningPathNode[]) {
     ?? path.find((node) => node.status === "unconfirmed")
     ?? path.find((node) => node.status === "unknown")
     ?? null;
+}
+
+export function deriveNextMove(state: LearningState, result: UnderstandingCheckResult): NextMove {
+  if (result.outcome === "gap" && result.gap) {
+    return {
+      kind: "retry",
+      title: `${result.gap.topic}だけを別の方法で確かめる`,
+      reason: `${result.summary}という確認結果から、${result.gap.reason}に絞ります。${result.nextAction}`,
+      scope: result.gap.topic,
+      preserved: result.summary,
+    };
+  }
+  const checkedPath = state.path.map((node) => node.id === result.nodeId ? { ...node, status: "confirmed" as const } : node);
+  const next = firstActionableNode(checkedPath);
+  return next
+    ? { kind: "advance", title: next.title, reason: `${result.summary}と確認できたため、学習経路の次へ進みます。`, scope: next.title, preserved: result.summary }
+    : { kind: "complete", title: "到達状態を振り返る", reason: `${result.summary}と確認でき、現在の学習経路を終えました。`, scope: state.targetState ?? state.purpose.statement, preserved: result.summary };
+}
+
+function downstreamCount(path: LearningPathNode[], nodeId: string): number {
+  const direct = path.filter((node) => node.dependsOn.includes(nodeId));
+  return direct.length + direct.reduce((sum, node) => sum + downstreamCount(path, node.id), 0);
+}
+
+export function prioritizeOpenGaps(state: LearningState) {
+  const open = state.gaps.filter((gap) => gap.status !== "resolved");
+  if (!open.length) return null;
+  const ranked = open.map((gap, index) => {
+    const returnNode = state.path.find((node) => node.id === gap.returnNodeId);
+    const dependency = returnNode?.dependsOn.find((id) => state.path.some((node) => node.id === id && gap.topic.includes(node.title.replace(/を.*$/, ""))));
+    return { gap, index, score: returnNode ? downstreamCount(state.path, returnNode.id) + (dependency ? 2 : 0) : -1 };
+  }).sort((a, b) => b.score - a.score || a.index - b.index);
+  return { gap: ranked[0].gap, reason: `${ranked[0].gap.impact}ため、現在の到達状態への影響が最も大きい一件です。`, remaining: ranked.slice(1).map((item) => item.gap) };
+}
+
+export function explainGapRelation(state: LearningState, gap: LearningGap): GapRelation {
+  const returnNode = state.path.find((node) => node.id === gap.returnNodeId);
+  if (!returnNode) return { kind: "unknown", explanation: `「${gap.topic}」と到達状態の関係は、現在の学習経路からは確認できません。`, timing: "補強するか、いつ取り組むかはあなたが決められます。" };
+  return {
+    kind: "required",
+    explanation: `「${gap.topic}」は、現在地の「${returnNode.title}」へ戻るために必要です。ここを補うことで「${state.targetState ?? state.purpose.statement}」への経路を続けられます。`,
+    timing: "今補強するか、あとで取り組むかはあなたが決められます。",
+  };
 }
 
 function hasDependencyCycle(path: LearningPathNode[]) {
@@ -230,13 +275,14 @@ export function applyCheckResult(state: LearningState, result: UnderstandingChec
       ? { ...challenge, status: "reviewed" as const, resolutionCheckIndex }
       : challenge,
   );
+  const nextMove = deriveNextMove(state, result);
   if (result.outcome === "confirmed") {
     const next = firstActionableNode(path);
     return {
       ...state,
       path,
       currentNodeId: next?.id ?? result.nodeId,
-      focus: next ? { id: `focus-${next.id}`, kind: "learn", title: next.title, reason: result.nextAction, nodeId: next.id, source: "inferred" } : null,
+      focus: next ? { id: `focus-${next.id}`, kind: "learn", title: nextMove.title, reason: nextMove.reason, nodeId: next.id, source: "inferred" } : null,
       lastCheck: result,
       checkHistory: [...state.checkHistory, result],
       checkChallenges,
@@ -251,7 +297,7 @@ export function applyCheckResult(state: LearningState, result: UnderstandingChec
     ...state,
     path,
     currentNodeId: result.nodeId,
-    focus: { id: `reinforce-${gap.id}`, kind: "reinforce", title: gap.topic, reason: `${gap.reason}。${gap.impact}`, nodeId: result.nodeId, source: "inferred" },
+    focus: { id: `reinforce-${gap.id}`, kind: "reinforce", title: nextMove.title, reason: nextMove.reason, nodeId: result.nodeId, source: "inferred" },
     lastCheck: result,
     checkHistory: [...state.checkHistory, result],
     checkChallenges,

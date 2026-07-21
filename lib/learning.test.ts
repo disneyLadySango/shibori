@@ -12,6 +12,9 @@ import {
   recordPositionCorrection,
   recordDependencyCorrection,
   resumeLearning,
+  deriveNextMove,
+  explainGapRelation,
+  prioritizeOpenGaps,
   setLearningPlan,
 } from "./learning";
 import type { LearningPathNode } from "./types";
@@ -284,5 +287,51 @@ describe("US-025 reinforcement timing", () => {
     const completed = completeReinforcement(state, "g1");
     expect(completed.gaps[0].status).toBe("resolved");
     expect(completed.currentNodeId).toBe("p-value");
+  });
+});
+
+describe("US-023 next move after a check", () => {
+  it("advances after confirmation and ties the reason to that result", () => {
+    const state = setLearningPlan(createLearningState({ purpose: "統計", role: "PM", why: "判断したい" }), "A/Bテストを判断できる", nodes);
+    const result = { nodeId: "foundation", outcome: "confirmed" as const, summary: "標本分布を説明できた", nextAction: "p値へ進む", gap: null };
+    expect(deriveNextMove(state, result)).toEqual(expect.objectContaining({ kind: "advance", title: "p値を説明できる", reason: expect.stringContaining("説明できた") }));
+  });
+
+  it("retries only the observed gap with a changed attempt", () => {
+    const state = setLearningPlan(createLearningState({ purpose: "統計", role: "PM", why: "判断したい" }), "A/Bテストを判断できる", nodes);
+    const result = { nodeId: "p-value", outcome: "gap" as const, summary: "定義は説明できたが解釈が不足", nextAction: "具体例で確かめる", gap: { id: "g1", topic: "p値の解釈", reason: "解釈が不足", impact: "判断を誤る", returnNodeId: "p-value" } };
+    const move = deriveNextMove(state, result);
+    expect(move).toEqual(expect.objectContaining({ kind: "retry", scope: "p値の解釈", preserved: "定義は説明できたが解釈が不足" }));
+    expect(move.reason).toContain("解釈が不足");
+  });
+});
+
+describe("US-030 gap priority", () => {
+  it("recommends one impactful gap and preserves the others", () => {
+    const state = setLearningPlan(createLearningState({ purpose: "統計", role: "PM", why: "判断したい" }), "A/Bテストを判断できる", nodes);
+    const withGaps = { ...state, gaps: [
+      { id: "g1", topic: "標本分布", reason: "前提", impact: "p値を説明できない", returnNodeId: "p-value", status: "deferred" as const },
+      { id: "g2", topic: "効果量", reason: "判断に必要", impact: "到達状態の判断を誤る", returnNodeId: "decision", status: "recommended" as const },
+      { id: "g3", topic: "歴史", reason: "背景", impact: "到達状態との関係は未確認", returnNodeId: "missing", status: "deferred" as const },
+    ] };
+    const priority = prioritizeOpenGaps(withGaps);
+    expect(priority?.gap.id).toBe("g1");
+    expect(priority?.remaining.map((gap) => gap.id)).toEqual(["g2", "g3"]);
+    expect(withGaps.gaps.map((gap) => gap.status)).toEqual(["deferred", "recommended", "deferred"]);
+  });
+});
+
+describe("US-015 prerequisite relation", () => {
+  it("explains a known path relation without forcing its timing", () => {
+    const state = setLearningPlan(createLearningState({ purpose: "統計", role: "PM", why: "判断したい" }), "A/Bテストを判断できる", nodes);
+    const relation = explainGapRelation(state, { id: "g1", topic: "標本分布", reason: "前提", impact: "p値を説明できない", returnNodeId: "p-value", status: "recommended" });
+    expect(relation.kind).toBe("required");
+    expect(relation.explanation).toContain("p値を説明できる");
+    expect(relation.timing).toContain("あなたが決められます");
+  });
+
+  it("does not call an unknown relation required", () => {
+    const state = setLearningPlan(createLearningState({ purpose: "統計", role: "PM", why: "判断したい" }), "A/Bテストを判断できる", nodes);
+    expect(explainGapRelation(state, { id: "g3", topic: "歴史", reason: "背景", impact: "不明", returnNodeId: "missing", status: "deferred" }).kind).toBe("unknown");
   });
 });

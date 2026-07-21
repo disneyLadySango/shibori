@@ -9,8 +9,11 @@ import {
   completeReinforcement,
   createLearningState,
   deferGap,
+  deriveNextMove,
+  explainGapRelation,
   explainFocus,
   learningDataPolicy,
+  prioritizeOpenGaps,
   recordDependencyCorrection,
   recordPositionCorrection,
   setLearningPlan,
@@ -299,7 +302,8 @@ export default function Home() {
     finally { setAudioLoading(false); }
   }
 
-  const openGaps = state?.gaps.filter((gap) => gap.status !== "resolved") ?? [];
+  const prioritizedGaps = state ? prioritizeOpenGaps(state) : null;
+  const nextMove = state && result ? deriveNextMove(state, result) : null;
   const latestContextChange = portfolio?.contextChanges.at(-1);
   const focusExplanation = state?.focus ? explainFocus(state) : null;
   const pendingChallenge = state?.checkChallenges.findLast((challenge) => challenge.status === "pending");
@@ -365,12 +369,12 @@ export default function Home() {
 
     <section className={!plan ? "muted-section" : ""}>
       <SectionTitle number={projection ? "04" : "03"} note="読んだ・聞いたではなく、いま何ができるかを確かめます。">理解確認</SectionTitle>
-      {!plan ? <p className="empty-state">集中先を選ぶと、その一つだけを確かめる問いが現れます。</p> : <div className="check-card"><span>{pendingChallenge ? "RECHECK · 追加の理解確認" : "CHECK ONE THING"}</span><h3>{plan.check.prompt}</h3><p>{plan.check.reason}</p><textarea value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="自分の言葉、計算、判断の理由などを書いてください。" /><button onClick={check} disabled={checking}>{checking ? "いまできることを見ています…" : pendingChallenge ? "追加の確認結果で再評価" : "理解状態を確かめる"}</button>{result && <div className={`check-result ${result.outcome}`}><strong>{result.outcome === "confirmed" ? "ここは確認できました" : "できた部分を残して、抜けを一つ発見"}</strong><p>{result.summary}</p></div>}{state?.lastCheck && !pendingChallenge && <form className="challenge-form" onSubmit={challengeCheck}><label><span>CHALLENGE</span>この判定に異議がある<input value={challengeReason} onChange={(event) => setChallengeReason(event.target.value)} placeholder="見直してほしい理由" /></label><button>追加の理解確認へ</button></form>}{pendingChallenge && <p className="pending-challenge">元の確認結果は残っています。追加の回答をもとに再評価します。</p>}</div>}
+      {!plan ? <p className="empty-state">集中先を選ぶと、その一つだけを確かめる問いが現れます。</p> : <div className="check-card"><span>{pendingChallenge ? "RECHECK · 追加の理解確認" : "CHECK ONE THING"}</span><h3>{plan.check.prompt}</h3><p>{plan.check.reason}</p><textarea value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="自分の言葉、計算、判断の理由などを書いてください。" /><button onClick={check} disabled={checking}>{checking ? "いまできることを見ています…" : pendingChallenge ? "追加の確認結果で再評価" : "理解状態を確かめる"}</button>{result && <div className={`check-result ${result.outcome}`}><strong>{result.outcome === "confirmed" ? "ここは確認できました" : "できた部分を残して、抜けを一つ発見"}</strong><p>{result.summary}</p>{nextMove && <div className="next-move"><span>NEXT · 次の一手</span><h4>{nextMove.title}</h4><p>{nextMove.reason}</p>{nextMove.kind === "retry" && <small>再挑戦するのは「{nextMove.scope}」だけ。取り組む時期はあなたが決められます。</small>}</div>}</div>}{state?.lastCheck && !pendingChallenge && <form className="challenge-form" onSubmit={challengeCheck}><label><span>CHALLENGE</span>この判定に異議がある<input value={challengeReason} onChange={(event) => setChallengeReason(event.target.value)} placeholder="見直してほしい理由" /></label><button>追加の理解確認へ</button></form>}{pendingChallenge && <p className="pending-challenge">元の確認結果は残っています。追加の回答をもとに再評価します。</p>}</div>}
     </section>
 
     <section>
       <SectionTitle number={projection ? "05" : "04"} note="理由と影響を見て、今補強するか、後にするか選べます。">抜けと補強</SectionTitle>
-      {!openGaps.length ? <p className="empty-state">理解確認で不足が見つかると、元の学びへ戻る場所と一緒に記録します。</p> : <div className="gap-list">{openGaps.map((gap) => <article key={gap.id}><span>{gap.status === "deferred" ? "あとで補強" : "補強おすすめ"}</span><div><h3>{gap.topic}</h3><p>{gap.reason}</p><p><strong>影響:</strong> {gap.impact}</p></div><div className="gap-actions"><button onClick={() => commitLearningState(chooseFocus(state!, { id: `reinforce-${gap.id}`, kind: "reinforce", title: gap.topic, reason: `${gap.reason}。${gap.impact}`, nodeId: gap.returnNodeId }))}>今、補強する</button><button onClick={() => commitLearningState(deferGap(state!, gap.id))}>あとで</button><button onClick={() => commitLearningState(completeReinforcement(state!, gap.id))}>補強を終えて戻る</button></div></article>)}</div>}
+      {!prioritizedGaps ? <p className="empty-state">理解確認で不足が見つかると、元の学びへ戻る場所と一緒に記録します。</p> : <div className="gap-list">{[prioritizedGaps.gap].map((gap) => { const relation = explainGapRelation(state!, gap); return <article key={gap.id}><span>いま最も影響する一件</span><div><h3>{gap.topic}</h3><p>{prioritizedGaps.reason}</p><p><strong>経路との関係:</strong> {relation.explanation}</p><small>{relation.timing}</small></div><div className="gap-actions"><button onClick={() => commitLearningState(chooseFocus(state!, { id: `reinforce-${gap.id}`, kind: "reinforce", title: gap.topic, reason: `${gap.reason}。${gap.impact}`, nodeId: gap.returnNodeId }))}>今、補強する</button><button onClick={() => commitLearningState(deferGap(state!, gap.id))}>あとで</button><button onClick={() => commitLearningState(completeReinforcement(state!, gap.id))}>補強を終えて戻る</button></div></article>; })}{prioritizedGaps.remaining.length > 0 && <details className="remaining-gaps"><summary>残りの抜け {prioritizedGaps.remaining.length}件（記録を保持）</summary>{prioritizedGaps.remaining.map((gap) => <p key={gap.id}><strong>{gap.topic}</strong> — {gap.impact}</p>)}</details>}</div>}
     </section>
     {state && <section>
       <SectionTitle number={projection ? "06" : "05"} note="使った集中資源と理解確認の結果は、別の事実として振り返ります。">配分の振り返り</SectionTitle>
