@@ -1,20 +1,20 @@
 # Shibori / シボリ
 
-複数の学習目的・到達状態・理解状態を混ぜずにつなぎ、「次に集中する一つ」を提案する学習支援プロダクトです。興味だけでも始められ、学びながら「何ができるようになりたいか」を見つけられます。
+Shibori is a focus portfolio for learning. It keeps multiple learning purposes, target states, and current understanding separate, then recommends the one next thing worth your focus. You can begin with curiosity alone and discover what you want to be able to do through learning.
 
-OpenAI Build Week Education Track向けに、Slice Aの学習ループとSlice Bの学習ポートフォリオを実装しています。
+Built for the OpenAI Build Week Education track. The public demo opens in English at `/`; the complete Japanese experience remains available at `/ja`. Both languages share the same locally stored learning state.
 
-1. 学習目的だけで探索を始める、またはCanで到達状態を置く
-2. 到達状態への依存関係と現在地を可視化する
-3. GPT-5.6が次の集中先を一つだけ提案する
-4. 教材があれば、耳でつかむ講義と机の一問へ再編集する
-5. 回答から理解状態を確認し、できた部分を残して不足だけを「抜け」にする
-6. 補強を今するか後にするか選び、終えたら保存した場所へ戻る
-7. ブラウザを閉じても現在地・集中先・抜けから再開する
-8. 複数の学習目的を、それぞれの現在地・理解状態・抜けを混ぜずに持つ
-9. GPT-5.6が目的間から一つを理由つきですすめ、学習者が最終的な一つを選ぶ
+1. Start exploring from a learning purpose, or declare a target state as a Can.
+2. See the dependencies and your current position on the path.
+3. Let GPT-5.6 recommend one next focus, with a reason.
+4. Reshape material into either a listenable explanation or one desk problem.
+5. Check understanding from an answer, preserving what worked and isolating one gap.
+6. Reinforce now or later, then return to the saved learning position.
+7. Resume the same position, focus, and gaps after closing the browser.
+8. Keep multiple purposes without mixing their paths or understanding states.
+9. Receive one cross-purpose recommendation while retaining the final decision.
 
-おすすめは一つに絞りますが、学習者は別の学びを選べます。教材を読んだ・聞いたという事実だけでは理解済みにしません。
+Shibori narrows the recommendation to one, but never takes the learner's choice away. Reading or listening alone is never treated as proof of understanding.
 
 ## Setup
 
@@ -24,17 +24,17 @@ cp .env.example .env.local
 npm run dev
 ```
 
-`.env.local` に `OPENAI_API_KEY` を設定してください。未設定でも、デモモードで探索・経路・理解確認・補強のループを確認できます。
+Set `OPENAI_API_KEY` in `.env.local`. Without it, the built-in sample still demonstrates exploration, planning, checking, and reinforcement.
 
 ## OpenAI integration
 
-- `gpt-5.6`: 学習経路、現在地、次の集中先、理解確認の問いをstrict structured outputで提案
-- `gpt-5.6`: 複数の学習目的から、次に集中するおすすめを理由つきで一つだけ提案
-- `gpt-5.6`: 学習者の回答から、確認できたことと一件の抜けをstrict structured outputで判定
-- `gpt-5.6`: 任意の教材を耳パート・机パート・前提の抜けへ再編集
-- `gpt-4o-mini-tts`: 専用Speech APIで日本語講義を音声化（LLM判断とは区別）
+- `gpt-5.6`: proposes the learning path, current position, next focus, and one understanding check with strict structured output
+- `gpt-5.6`: recommends one purpose from a multi-purpose portfolio, with an explicit reason
+- `gpt-5.6`: evaluates what an answer demonstrates and isolates at most one actionable gap
+- `gpt-5.6`: reshapes arbitrary material around the learner's available focus
+- `gpt-4o-mini-tts`: turns English or Japanese listening scripts into speech; it is kept separate from LLM decisions
 
-中核は [`lib/openai.ts`](lib/openai.ts)、目的間の配分判断は [`lib/prioritization.ts`](lib/prioritization.ts)、状態分離は [`lib/portfolio.ts`](lib/portfolio.ts)、各目的内の学習状態遷移は [`lib/learning.ts`](lib/learning.ts) にあります。APIキーはサーバー側だけで参照します。
+The OpenAI boundary lives in [`lib/openai.ts`](lib/openai.ts), cross-purpose allocation in [`lib/prioritization.ts`](lib/prioritization.ts), state isolation in [`lib/portfolio.ts`](lib/portfolio.ts), and learning-state transitions in [`lib/learning.ts`](lib/learning.ts). The API key is only read server-side.
 
 ```text
 複数の学習目的 ─> GPT-5.6: おすすめ一つ ─> 学習者が最終選択

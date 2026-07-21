@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 
 import {
   applyCheckResult,
@@ -96,6 +97,8 @@ export default function Home() {
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
+    document.documentElement.lang = "ja";
+    localStorage.setItem("shibori-dialog-language", "ja");
     const frame = requestAnimationFrame(() => {
       const serialized = localStorage.getItem(storageKey) ?? legacyStorageKeys.map((key) => localStorage.getItem(key)).find(Boolean);
       if (!serialized) return;
@@ -123,7 +126,7 @@ export default function Home() {
   }
 
   async function requestPlan(nextState: LearningState, clearCheck = true, add = false) {
-    const response = await fetch("/api/plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state: nextState, material }) });
+    const response = await fetch("/api/plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state: nextState, material, language: "ja" }) });
     const body = await response.json();
     if (!response.ok) throw new Error(body.error);
     const proposal = body as LearningPlanProposal;
@@ -143,7 +146,7 @@ export default function Home() {
     const response = await fetch("/api/project", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
       context, material, gaps,
       focusResource: { minutes: materialMinutes, attention: materialAttention },
-      learningPosition: { targetState: nextState.targetState, current, focus: nextState.focus?.title ?? "未選択" },
+      learningPosition: { targetState: nextState.targetState, current, focus: nextState.focus?.title ?? "未選択" }, language: "ja",
     }) });
     const body = await response.json();
     if (!response.ok) throw new Error(body.error);
@@ -180,7 +183,7 @@ export default function Home() {
     if (!state || !plan || !answer.trim()) { setError("考えたことを、途中まででも書いてください。"); return; }
     setChecking(true); setError("");
     try {
-      const response = await fetch("/api/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state, prompt: plan.check.prompt, answer }) });
+      const response = await fetch("/api/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state, prompt: plan.check.prompt, answer, language: "ja" }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error);
       const pendingChallenge = state.checkChallenges.findLast((challenge) => challenge.status === "pending");
@@ -325,7 +328,7 @@ export default function Home() {
     if (audioUrl) { await audioRef.current?.play(); return; }
     setAudioLoading(true);
     try {
-      const response = await fetch("/api/speech", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ script: projection.earScript }) });
+      const response = await fetch("/api/speech", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ script: projection.earScript, language: "ja" }) });
       if (!response.ok) throw new Error((await response.json()).error);
       const url = URL.createObjectURL(await response.blob()); setAudioUrl(url); requestAnimationFrame(() => audioRef.current?.play());
     } catch (caught) { setError(caught instanceof Error ? caught.message : "音声を再生できませんでした。"); }
@@ -343,6 +346,7 @@ export default function Home() {
 
   return <main>
     <header className="hero">
+      <nav className="language-switch" aria-label="言語"><Link href="/" lang="en">EN</Link><strong aria-current="page">日本語</strong></nav>
       <div className="brand"><Aperture complete={Boolean(state?.focus)} /><span>シ ボ リ</span></div>
       {restored && <a className="resume-chip" href="#focus" onClick={() => void replan()}>前回の現在地から再開 →</a>}
       <p className="eyebrow">FOCUS PORTFOLIO FOR LEARNING</p>

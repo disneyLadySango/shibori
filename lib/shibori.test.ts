@@ -46,6 +46,20 @@ describe("desk task evaluation", () => {
 });
 
 describe("createDemoProjection", () => {
+  it("returns an English projection when English is the dialog language", () => {
+    const projection = createDemoProjection(
+      { role: "Engineer and PM", goal: "Understand statistics", why: "Design A/B tests", updatedAt: "2026-07-22" },
+      [],
+      { minutes: 15, attention: "light" },
+      "en",
+    );
+
+    expect(projection.earScript).toMatch(/hypothesis testing/i);
+    expect(projection.segments[0].text).toContain("Hypothesis");
+    expect(JSON.stringify(projection)).not.toMatch(/[ぁ-んァ-ン一-龯]/);
+    expect(projectionSchema.safeParse(projection).success).toBe(true);
+  });
+
   it("selects one light-focus part and keeps the four-way material map", () => {
     const projection = createDemoProjection(
       { role: "エンジニア兼PM", goal: "統計", why: "A/Bテスト", updatedAt: "now" }, [],

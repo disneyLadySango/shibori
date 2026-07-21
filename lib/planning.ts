@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { LearningPlanProposal, LearningState, UnderstandingCheckResult } from "./types";
+import type { DialogLanguage } from "./i18n";
 
 export const learningPlanSchema = z.object({
   mode: z.enum(["exploring", "learning"]),
@@ -36,11 +37,13 @@ export const understandingCheckSchema = z.object({
   }).nullable(),
 });
 
-export function buildLearningPlanPrompt({ state, material = "" }: { state: LearningState; material?: string }) {
+export function buildLearningPlanPrompt({ state, material = "", language = "ja" }: { state: LearningState; material?: string; language?: DialogLanguage }) {
   const target = state.targetState ?? "未設定";
   const path = state.path.length ? state.path.map((node) => `- ${node.id}: ${node.title} / dependsOn=${node.dependsOn.join(",") || "なし"} / ${node.status}`).join("\n") : "なし";
   const gaps = state.gaps.length ? state.gaps.map((gap) => `- ${gap.id}: ${gap.topic} / ${gap.reason} / impact=${gap.impact} / ${gap.status}`).join("\n") : "なし";
-  return `あなたはShiboriの学習配分担当です。学習者が次に集中する一つだけを決めます。
+  return `${language === "en" ? "Write every generated explanation in English." : "生成する説明はすべて日本語で書く。"}
+
+あなたはShiboriの学習配分担当です。学習者が次に集中する一つだけを決めます。
 
 ## 学習者
 - 活動: ${state.purpose.role || "未入力"}
@@ -67,8 +70,10 @@ ${material.trim() || "なし"}
 - checkは説明、計算、判断、実行のいずれかで、現在の集中先だけを確かめる。`;
 }
 
-export function buildCheckPrompt({ state, prompt, answer }: { state: LearningState; prompt: string; answer: string }) {
-  return `あなたはShiboriの理解確認担当です。学習者の回答から、確認した部分だけの理解状態を判断します。
+export function buildCheckPrompt({ state, prompt, answer, language = "ja" }: { state: LearningState; prompt: string; answer: string; language?: DialogLanguage }) {
+  return `${language === "en" ? "Write every generated explanation in English." : "生成する説明はすべて日本語で書く。"}
+
+あなたはShiboriの理解確認担当です。学習者の回答から、確認した部分だけの理解状態を判断します。
 
 ## 学習目的
 ${state.purpose.statement}
@@ -92,7 +97,37 @@ ${answer}
 - nextActionは次の一手を一つだけ返す。`;
 }
 
-export function createDemoLearningPlan(state: LearningState): LearningPlanProposal {
+export function createDemoLearningPlan(state: LearningState, language: DialogLanguage = "ja"): LearningPlanProposal {
+  if (language === "en") {
+    if (!state.targetState) return {
+      mode: "exploring", targetState: null, path: [], currentNodeId: null,
+      focus: {
+        id: "explore-first", kind: "explore",
+        title: `Grasp the shape of “${state.purpose.statement}” through one concrete example`,
+        reason: "This reveals what draws you in and gives you material for defining your next Can.", nodeId: null,
+      },
+      check: {
+        nodeId: null,
+        prompt: "What felt most interesting, and what would you like to be able to explain next?",
+        reason: "Your first exploration can reveal a meaningful target state without forcing one upfront.",
+      },
+    };
+
+    const path = state.path.length ? state.path : [{ id: "target", title: state.targetState, dependsOn: [], status: "unconfirmed" as const }];
+    const current = path.find((node) => node.id === state.currentNodeId) ?? path.find((node) => node.status === "unconfirmed");
+    return {
+      mode: "learning", targetState: state.targetState, path, currentNodeId: current?.id ?? null,
+      focus: {
+        id: `learn-${current?.id ?? "next"}`, kind: "learn", title: current?.title ?? state.targetState,
+        reason: "This is the single next step from your current understanding toward the target state.", nodeId: current?.id ?? null,
+      },
+      check: {
+        nodeId: current?.id ?? null,
+        prompt: `Demonstrate “${current?.title ?? state.targetState}” in your own words or with a concrete example.`,
+        reason: "This separates exposure to material from what you can actually do now.",
+      },
+    };
+  }
   if (!state.targetState) {
     return {
       mode: "exploring",
@@ -136,9 +171,23 @@ export function createDemoLearningPlan(state: LearningState): LearningPlanPropos
   };
 }
 
-export function createDemoCheckResult(state: LearningState, answer: string): UnderstandingCheckResult {
+export function createDemoCheckResult(state: LearningState, answer: string, language: DialogLanguage = "ja"): UnderstandingCheckResult {
   const nodeId = state.currentNodeId ?? state.focus?.nodeId ?? "exploration";
   const confirmed = answer.trim().length >= 40;
+  if (language === "en") return confirmed ? {
+    nodeId, outcome: "confirmed",
+    summary: "You explained the idea concretely in your own words.",
+    nextAction: "Move to the next position on your path", gap: null,
+  } : {
+    nodeId, outcome: "gap",
+    summary: "Your line of thought is visible, but it still needs one concrete example or reason.",
+    nextAction: "Add one concrete example and explain it again",
+    gap: {
+      id: crypto.randomUUID(), topic: state.focus?.title ?? "Current focus",
+      reason: "The explanation needs a supporting example",
+      impact: `It supports showing “${state.targetState ?? state.purpose.statement}” in your own words`, returnNodeId: nodeId,
+    },
+  };
   return confirmed ? {
     nodeId,
     outcome: "confirmed",

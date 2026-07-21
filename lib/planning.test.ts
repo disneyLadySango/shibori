@@ -4,6 +4,21 @@ import { buildCheckPrompt, buildLearningPlanPrompt, createDemoLearningPlan, lear
 import { createLearningState, setLearningPlan } from "./learning";
 
 describe("learning plan", () => {
+  it("creates an English demo plan without Japanese decision copy", () => {
+    const state = createLearningState({ purpose: "Learn statistics", role: "Engineer and PM", why: "Design A/B tests" });
+    const plan = createDemoLearningPlan(state, "en");
+
+    expect(plan.focus.title).toContain("Learn statistics");
+    expect(plan.focus.reason).toContain("next Can");
+    expect(plan.check.prompt).toContain("most interesting");
+    expect(JSON.stringify(plan)).not.toMatch(/[ぁ-んァ-ン一-龯]/);
+  });
+
+  it("keeps the Japanese demo plan available", () => {
+    const state = createLearningState({ purpose: "統計を学ぶ", role: "PM", why: "判断したい" });
+    expect(createDemoLearningPlan(state, "ja").focus.reason).toContain("次のCan");
+  });
+
   it("asks GPT-5.6 for one exploration when no target state exists", () => {
     const state = createLearningState({ purpose: "量子力学が面白そう", role: "デザイナー", why: "" });
     const prompt = buildLearningPlanPrompt({ state, material: "" });
