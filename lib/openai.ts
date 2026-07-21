@@ -3,7 +3,29 @@ import { zodTextFormat } from "openai/helpers/zod";
 
 import { buildEvaluationPrompt, buildProjectionPrompt, deskEvaluationSchema, projectionSchema } from "./shibori";
 import { buildCheckPrompt, buildLearningPlanPrompt, learningPlanSchema, understandingCheckSchema } from "./planning";
-import type { DeskEvaluation, GapEntry, LearningPlanProposal, LearningState, Projection, UnderstandingCheckResult, UserContext } from "./types";
+import { buildPurposeRecommendationPrompt, purposeRecommendationOutputSchema } from "./prioritization";
+import type { DeskEvaluation, GapEntry, LearningPlanProposal, LearningPortfolio, LearningState, Projection, PurposeRecommendation, UnderstandingCheckResult, UserContext } from "./types";
+
+export async function recommendLearningPurpose(input: {
+  portfolio: LearningPortfolio;
+  availableFocus: string;
+}): Promise<PurposeRecommendation> {
+  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const response = await client.responses.parse({
+    model: "gpt-5.6",
+    input: [
+      { role: "system", content: "学習者の最終選択を奪わず、複数の学習目的から理由つきのおすすめを一つだけ日本語で返してください。" },
+      { role: "user", content: buildPurposeRecommendationPrompt(input.portfolio, input.availableFocus) },
+    ],
+    text: { format: zodTextFormat(purposeRecommendationOutputSchema, "shibori_purpose_recommendation") },
+  });
+
+  if (!response.output_parsed) throw new Error("GPT-5.6 did not return a purpose recommendation.");
+  if (!input.portfolio.purposes.some((state) => state.purpose.id === response.output_parsed?.purposeId)) {
+    throw new Error("GPT-5.6 recommended an unknown learning purpose.");
+  }
+  return response.output_parsed;
+}
 
 export async function planLearning(input: {
   state: LearningState;

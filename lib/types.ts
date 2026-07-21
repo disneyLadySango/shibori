@@ -108,3 +108,17 @@ export type LearningPlanProposal = {
     reason: string;
   };
 };
+
+export type PurposeRecommendation = {
+  purposeId: string;
+  reason: string;
+  basis: string[];
+};
+
+export type LearningPortfolio = {
+  version: 3;
+  purposes: LearningState[];
+  selectedPurposeId: string;
+  recommendation: PurposeRecommendation | null;
+  updatedAt: string;
+};

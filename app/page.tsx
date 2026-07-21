@@ -8,18 +8,29 @@ import {
   completeReinforcement,
   createLearningState,
   deferGap,
-  resumeLearning,
   setLearningPlan,
 } from "@/lib/learning";
+import {
+  addLearningPurpose,
+  createPortfolio,
+  getSelectedLearningState,
+  resumePortfolio,
+  selectLearningPurpose,
+  setPurposeRecommendation,
+  updateLearningPurpose,
+} from "@/lib/portfolio";
 import { sampleMaterial } from "@/lib/shibori";
 import type {
+  LearningPortfolio,
   LearningPlanProposal,
   LearningState,
   Projection,
+  PurposeRecommendation,
   UnderstandingCheckResult,
 } from "@/lib/types";
 
-const storageKey = "shibori-learning-state-v2";
+const storageKey = "shibori-learning-portfolio-v3";
+const legacyStorageKey = "shibori-learning-state-v2";
 
 function Aperture({ active, complete }: { active?: boolean; complete?: boolean }) {
   return <svg className={`aperture ${active ? "is-active" : ""} ${complete ? "is-complete" : ""}`} viewBox="0 0 64 64" aria-hidden="true">
@@ -43,7 +54,7 @@ export default function Home() {
   const [why, setWhy] = useState("");
   const [target, setTarget] = useState("");
   const [material, setMaterial] = useState("");
-  const [state, setState] = useState<LearningState | null>(null);
+  const [portfolio, setPortfolio] = useState<LearningPortfolio | null>(null);
   const [plan, setPlan] = useState<LearningPlanProposal | null>(null);
   const [projection, setProjection] = useState<Projection | null>(null);
   const [answer, setAnswer] = useState("");
@@ -52,29 +63,40 @@ export default function Home() {
   const [checking, setChecking] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
   const [audioUrl, setAudioUrl] = useState("");
+  const [availableFocus, setAvailableFocus] = useState("");
+  const [prioritizing, setPrioritizing] = useState(false);
   const [error, setError] = useState("");
   const [restored, setRestored] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
-      const serialized = localStorage.getItem(storageKey);
+      const serialized = localStorage.getItem(storageKey) ?? localStorage.getItem(legacyStorageKey);
       if (!serialized) return;
       try {
-        const saved = resumeLearning(serialized);
-        setState(saved); setPurpose(saved.purpose.statement); setRole(saved.purpose.role); setWhy(saved.purpose.why); setTarget(saved.targetState ?? ""); setRestored(true);
-      } catch { localStorage.removeItem(storageKey); }
+        setPortfolio(resumePortfolio(serialized)); setRestored(true);
+      } catch { localStorage.removeItem(storageKey); localStorage.removeItem(legacyStorageKey); }
     });
     return () => cancelAnimationFrame(frame);
   }, []);
 
   useEffect(() => {
-    if (state) localStorage.setItem(storageKey, JSON.stringify(state));
-  }, [state]);
+    if (portfolio) localStorage.setItem(storageKey, JSON.stringify(portfolio));
+  }, [portfolio]);
 
   useEffect(() => () => { if (audioUrl) URL.revokeObjectURL(audioUrl); }, [audioUrl]);
 
-  async function requestPlan(nextState: LearningState, clearCheck = true) {
+  const state = portfolio ? getSelectedLearningState(portfolio) : null;
+
+  function commitLearningState(nextState: LearningState, add = false) {
+    setPortfolio((current) => {
+      if (!current) return createPortfolio(nextState);
+      if (add) return selectLearningPurpose(addLearningPurpose(current, nextState), nextState.purpose.id);
+      return updateLearningPurpose(current, nextState);
+    });
+  }
+
+  async function requestPlan(nextState: LearningState, clearCheck = true, add = false) {
     const response = await fetch("/api/plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state: nextState, material }) });
     const body = await response.json();
     if (!response.ok) throw new Error(body.error);
@@ -82,7 +104,7 @@ export default function Home() {
     let planned = nextState;
     if (proposal.mode === "learning" && proposal.targetState) planned = setLearningPlan(nextState, proposal.targetState, proposal.path);
     planned = chooseFocus(planned, proposal.focus);
-    setState(planned); setPlan(proposal); setRestored(false);
+    commitLearningState(planned, add); setPlan(proposal); setRestored(false);
     if (clearCheck) { setResult(null); setAnswer(""); }
     return planned;
   }
@@ -102,8 +124,9 @@ export default function Home() {
     try {
       let next = createLearningState({ purpose: purpose.trim(), role: role.trim(), why: why.trim() });
       if (target.trim()) next = { ...next, phase: "learning", targetState: target.trim() };
-      next = await requestPlan(next);
+      next = await requestPlan(next, true, Boolean(portfolio));
       await projectMaterial(next);
+      setPurpose(""); setRole(""); setWhy(""); setTarget("");
       requestAnimationFrame(() => document.querySelector("#path")?.scrollIntoView({ behavior: "smooth" }));
     } catch (caught) { setError(caught instanceof Error ? caught.message : "学びの入口を作れませんでした。"); }
     finally { setLoading(false); }
@@ -146,7 +169,25 @@ export default function Home() {
     const data = new FormData(event.currentTarget);
     const title = String(data.get("focus") ?? "").trim();
     if (!title) return;
-    setState(chooseFocus(state, { id: crypto.randomUUID(), kind: "learn", title, reason: "学習者が今取り組むと選んだ集中先です。", nodeId: null }));
+    commitLearningState(chooseFocus(state, { id: crypto.randomUUID(), kind: "learn", title, reason: "学習者が今取り組むと選んだ集中先です。", nodeId: null }));
+  }
+
+  function choosePurpose(purposeId: string) {
+    if (!portfolio) return;
+    setPortfolio(selectLearningPurpose(portfolio, purposeId));
+    setPlan(null); setProjection(null); setResult(null); setAnswer(""); setError("");
+  }
+
+  async function recommendPurpose() {
+    if (!portfolio || portfolio.purposes.length < 2) return;
+    setPrioritizing(true); setError("");
+    try {
+      const response = await fetch("/api/prioritize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ portfolio, availableFocus }) });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error);
+      setPortfolio((current) => current ? setPurposeRecommendation(current, body as PurposeRecommendation) : current);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "学習目的をおすすめできませんでした。"); }
+    finally { setPrioritizing(false); }
   }
 
   async function playLecture() {
@@ -173,7 +214,16 @@ export default function Home() {
     </header>
 
     <section>
-      <SectionTitle number="00" note="実用性や期限がなくても、知りたい気持ちは十分な出発点です。">学習目的</SectionTitle>
+      <SectionTitle number="00" note="複数の学びを混ぜずに持ち、最終的にどれを選ぶかはあなたが決めます。">学習ポートフォリオ</SectionTitle>
+      {portfolio && <div className="portfolio-panel">
+        <div className="purpose-tabs">{portfolio.purposes.map((item) => <button type="button" key={item.purpose.id} className={item.purpose.id === portfolio.selectedPurposeId ? "selected" : ""} onClick={() => choosePurpose(item.purpose.id)}><span>{item.purpose.id === portfolio.selectedPurposeId ? "選択中" : item.phase === "exploring" ? "探索中" : "続きあり"}</span><strong>{item.purpose.statement}</strong><small>{item.targetState ?? "Canはこれから"}</small></button>)}</div>
+        {portfolio.purposes.length > 1 && <div className="portfolio-choice">
+          <label><span>AVAILABLE FOCUS</span>今使える集中資源（任意）<input value={availableFocus} onChange={(event) => setAvailableFocus(event.target.value)} placeholder="例: 深い集中を30分 / 移動中に15分" /></label>
+          <button type="button" onClick={recommendPurpose} disabled={prioritizing}>{prioritizing ? "目的間の配分を考えています…" : "次の学習目的を一つおすすめ"}</button>
+        </div>}
+        {portfolio.recommendation && <article className="purpose-recommendation"><span>GPT-5.6 RECOMMENDS ONE</span><h3>{portfolio.purposes.find((item) => item.purpose.id === portfolio.recommendation?.purposeId)?.purpose.statement}</h3><p>{portfolio.recommendation.reason}</p><small>判断に使ったこと: {portfolio.recommendation.basis.join(" / ")}</small><div><button type="button" onClick={() => choosePurpose(portfolio.recommendation!.purposeId)}>このおすすめを選ぶ</button><em>別の目的を選んでも、失敗にはなりません。</em></div></article>}
+      </div>}
+      <h3 className="add-purpose-title">{portfolio ? "学習目的をもう一つ加える" : "最初の学習目的"}</h3>
       <form className="purpose-form" onSubmit={begin}>
         <label className="wide"><span>LEARNING PURPOSE *</span>いま、何を学びたい？<input required value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="統計をもっと知りたい" /></label>
         <label><span>YOUR ACTIVITY</span>ふだん何をしている？<input value={role} onChange={(e) => setRole(e.target.value)} placeholder="エンジニア兼PM" /></label>
@@ -181,7 +231,7 @@ export default function Home() {
         <label className="wide"><span>OPTIONAL CAN</span>できるようになりたいことがあれば<input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="A/Bテストの結果を根拠つきで判断できる（あとで決めてもOK）" /></label>
         <details className="material-disclosure"><summary>手元の教材も使う（任意）</summary><div className="material-actions"><button type="button" onClick={() => setMaterial(sampleMaterial)}>サンプル教材を入れる</button><span>{material.length.toLocaleString()}文字</span></div><textarea value={material} onChange={(e) => setMaterial(e.target.value)} placeholder="教材テキストを貼り付けると、集中先に合わせて耳と机へ再編集します。" /></details>
         {error && <p className="error" role="alert">{error}</p>}
-        <button className="shiboru-button" disabled={loading}><Aperture active={loading} />{loading ? "学びの現在地を見ています…" : state ? "学びを組み直す" : "次のひとつを、絞る"}</button>
+        <button className="shiboru-button" disabled={loading}><Aperture active={loading} />{loading ? "学びの現在地を見ています…" : portfolio ? "この学習目的を加える" : "次のひとつを、絞る"}</button>
       </form>
     </section>
 
@@ -212,7 +262,7 @@ export default function Home() {
 
     <section>
       <SectionTitle number={projection ? "05" : "04"} note="理由と影響を見て、今補強するか、後にするか選べます。">抜けと補強</SectionTitle>
-      {!openGaps.length ? <p className="empty-state">理解確認で不足が見つかると、元の学びへ戻る場所と一緒に記録します。</p> : <div className="gap-list">{openGaps.map((gap) => <article key={gap.id}><span>{gap.status === "deferred" ? "あとで補強" : "補強おすすめ"}</span><div><h3>{gap.topic}</h3><p>{gap.reason}</p><p><strong>影響:</strong> {gap.impact}</p></div><div className="gap-actions"><button onClick={() => setState(chooseFocus(state!, { id: `reinforce-${gap.id}`, kind: "reinforce", title: gap.topic, reason: `${gap.reason}。${gap.impact}`, nodeId: gap.returnNodeId }))}>今、補強する</button><button onClick={() => setState(deferGap(state!, gap.id))}>あとで</button><button onClick={() => setState(completeReinforcement(state!, gap.id))}>補強を終えて戻る</button></div></article>)}</div>}
+      {!openGaps.length ? <p className="empty-state">理解確認で不足が見つかると、元の学びへ戻る場所と一緒に記録します。</p> : <div className="gap-list">{openGaps.map((gap) => <article key={gap.id}><span>{gap.status === "deferred" ? "あとで補強" : "補強おすすめ"}</span><div><h3>{gap.topic}</h3><p>{gap.reason}</p><p><strong>影響:</strong> {gap.impact}</p></div><div className="gap-actions"><button onClick={() => commitLearningState(chooseFocus(state!, { id: `reinforce-${gap.id}`, kind: "reinforce", title: gap.topic, reason: `${gap.reason}。${gap.impact}`, nodeId: gap.returnNodeId }))}>今、補強する</button><button onClick={() => commitLearningState(deferGap(state!, gap.id))}>あとで</button><button onClick={() => commitLearningState(completeReinforcement(state!, gap.id))}>補強を終えて戻る</button></div></article>)}</div>}
     </section>
     <footer><Aperture /><p>SHIBORI<br /><span>Focus on what deserves focus.</span></p></footer>
   </main>;
