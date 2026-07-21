@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { learningStateSchema } from "./learning";
-import type { LearningPortfolio, LearningState, PurposeRecommendation } from "./types";
+import type { AllocationRecord, LearningPortfolio, LearningState, PurposeRecommendation } from "./types";
 
 export const purposeRecommendationSchema = z.object({
   purposeId: z.string(),
@@ -9,11 +9,15 @@ export const purposeRecommendationSchema = z.object({
   basis: z.array(z.string()),
 });
 
+const purposeContextSchema = z.object({ deadline: z.string().nullable(), importance: z.enum(["low", "normal", "high"]), usageContext: z.string() });
+
 export const learningPortfolioSchema = z.object({
-  version: z.literal(3),
+  version: z.literal(4),
   purposes: z.array(learningStateSchema).min(1),
   selectedPurposeId: z.string(),
   recommendation: purposeRecommendationSchema.nullable(),
+  recommendationHistory: z.array(purposeRecommendationSchema).default([]),
+  contextChanges: z.array(z.object({ purposeId: z.string(), before: purposeContextSchema, after: purposeContextSchema, changedAt: z.string() })).default([]),
   updatedAt: z.string(),
 }).superRefine((portfolio, context) => {
   const ids = portfolio.purposes.map((state) => state.purpose.id);
@@ -34,10 +38,12 @@ function now() {
 
 export function createPortfolio(initial: LearningState): LearningPortfolio {
   return {
-    version: 3,
+    version: 4,
     purposes: [initial],
     selectedPurposeId: initial.purpose.id,
     recommendation: null,
+    recommendationHistory: [],
+    contextChanges: [],
     updatedAt: now(),
   };
 }
@@ -62,8 +68,32 @@ export function selectLearningPurpose(portfolio: LearningPortfolio, purposeId: s
 }
 
 export function setPurposeRecommendation(portfolio: LearningPortfolio, recommendation: PurposeRecommendation): LearningPortfolio {
-  if (!portfolio.purposes.some((state) => state.purpose.id === recommendation.purposeId)) return portfolio;
-  return { ...portfolio, recommendation, updatedAt: now() };
+  if (!portfolio.purposes.some((state) => state.purpose.id === recommendation.purposeId && state.purpose.status === "active")) return portfolio;
+  const recorded = { ...recommendation, createdAt: now() };
+  return { ...portfolio, recommendation: recorded, recommendationHistory: [...portfolio.recommendationHistory, recorded], updatedAt: now() };
+}
+
+export function updatePurposeContext(portfolio: LearningPortfolio, purposeId: string, context: { deadline: string | null; importance: "low" | "normal" | "high"; usageContext: string }): LearningPortfolio {
+  const state = portfolio.purposes.find((item) => item.purpose.id === purposeId);
+  if (!state) return portfolio;
+  const before = { deadline: state.purpose.deadline, importance: state.purpose.importance, usageContext: state.purpose.usageContext };
+  return { ...portfolio, purposes: portfolio.purposes.map((item) => item.purpose.id === purposeId ? { ...item, purpose: { ...item.purpose, ...context }, updatedAt: now() } : item), contextChanges: [...portfolio.contextChanges, { purposeId, before, after: context, changedAt: now() }], updatedAt: now() };
+}
+
+export function setPurposeStatus(portfolio: LearningPortfolio, purposeId: string, status: LearningState["purpose"]["status"], reason: string): LearningPortfolio {
+  const purposes = portfolio.purposes.map((state) => state.purpose.id === purposeId ? { ...state, purpose: { ...state.purpose, status, statusReason: reason, statusChangedAt: now() }, updatedAt: now() } : state);
+  const active = purposes.filter((state) => state.purpose.status === "active");
+  const selectedPurposeId = purposes.find((state) => state.purpose.id === portfolio.selectedPurposeId)?.purpose.status === "active" ? portfolio.selectedPurposeId : (active[0]?.purpose.id ?? portfolio.selectedPurposeId);
+  return { ...portfolio, purposes, selectedPurposeId, recommendation: portfolio.recommendation?.purposeId === purposeId && status !== "active" ? null : portfolio.recommendation, updatedAt: now() };
+}
+
+export function recordAllocation(portfolio: LearningPortfolio, purposeId: string, input: Pick<AllocationRecord, "depth" | "minutes" | "note">): LearningPortfolio {
+  const record: AllocationRecord = { ...input, id: crypto.randomUUID(), recordedAt: now() };
+  return { ...portfolio, purposes: portfolio.purposes.map((state) => state.purpose.id === purposeId ? { ...state, allocations: [...state.allocations, record], updatedAt: now() } : state), updatedAt: now() };
+}
+
+export function reflectOnAllocation(portfolio: LearningPortfolio, purposeId: string, judgment: "intentional" | "unintended", reason: string): LearningPortfolio {
+  return { ...portfolio, purposes: portfolio.purposes.map((state) => state.purpose.id === purposeId ? { ...state, allocationReflection: { judgment, reason, recordedAt: now() }, updatedAt: now() } : state), updatedAt: now() };
 }
 
 export function getSelectedLearningState(portfolio: LearningPortfolio): LearningState {
@@ -74,6 +104,8 @@ export function resumePortfolio(serialized: string): LearningPortfolio {
   const raw: unknown = JSON.parse(serialized);
   const current = learningPortfolioSchema.safeParse(raw);
   if (current.success) return current.data;
+  const legacyPortfolio = z.object({ version: z.literal(3), purposes: z.array(learningStateSchema).min(1), selectedPurposeId: z.string(), recommendation: purposeRecommendationSchema.nullable(), updatedAt: z.string() }).safeParse(raw);
+  if (legacyPortfolio.success) return learningPortfolioSchema.parse({ ...legacyPortfolio.data, version: 4, recommendationHistory: legacyPortfolio.data.recommendation ? [legacyPortfolio.data.recommendation] : [], contextChanges: [] });
   const legacy = learningStateSchema.safeParse(raw);
   if (legacy.success) return createPortfolio(legacy.data);
   throw new Error("Saved learning portfolio is invalid.");

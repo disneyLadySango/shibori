@@ -1,7 +1,7 @@
 # Shibori user story map
 
 - state: `proposed`
-- revision: `10`
+- revision: `11`
 - updated: `2026-07-21`
 
 このファイルだけが、ユーザーストーリー全体の順序、優先順位、リリーススライスを統括する。個別ストーリーのWho / Pain / Whyは`backlog/`、`active/`、`archive/`のUS-ID文書を正とする。
@@ -40,13 +40,13 @@
 
 - stories: US-010〜US-013, US-026、およびSlice Aの関連ストーリー
 - boundary: 二つ以上の学習目的を混同せず、一つを選択する
-- state: `backlog`
+- state: `active`
 - first_approval_candidate: US-010, US-011
 - first_candidate_boundary: 二つ以上の学習目的について到達状態、現在地、理解状態、確認結果、抜けを混同せず保持する。外部から理由つきのおすすめを一つ提示するが、最終的な集中先は学習者が選び、おすすめ以外を選んでも他の学習目的の状態や扱いを損なわない
 - first_candidate_state: `active`
 - second_approval_candidate: US-012, US-013, US-026
 - second_candidate_boundary: 学習目的の期限、重要度、利用場面が変わればおすすめを再評価し、変更前後の理由を示す。学習目的を休止して状態を保ったまま候補から外し、後で同じ続きへ戻れる。終了時は達成と取止めを区別する。目的ごとの集中資源と確認結果を振り返り、学習者が意図しないと判断した偏りだけを次のおすすめへ反映する
-- second_candidate_state: `backlog`
+- second_candidate_state: `active`
 
 ### Slice C — 配分の妥当性を学ぶ
 
@@ -56,7 +56,7 @@
 
 ## Priority decision
 
-Slice AとSlice Bの最初の境界は承認・実装済みである。次の承認候補は、現実の変化へ追従するSlice BのUS-012、US-013、US-026とする。人間が成果基準と検証方法を承認するまでactiveへ移さない。
+Slice AとSlice Bの最初の境界は承認・実装済みである。Slice BのUS-012、US-013、US-026は人間が成果基準と検証方法を承認し、実装対象としてactiveである。
 
 ## Revision history
 
@@ -70,3 +70,4 @@ Slice AとSlice Bの最初の境界は承認・実装済みである。次の承
 - revision 8, 2026-07-21: Q-003の回答を反映し、Slice Bの最初の承認候補を状態分離と学習者所有の選択へ限定。
 - revision 9, 2026-07-21: 人間がUS-010、US-011の2 ACと5テスト仕様を承認し、Slice Bの最初の境界をactive化。
 - revision 10, 2026-07-21: Slice Bの次の承認候補を、状況変化、休止・終了、配分振り返りの3ストーリーへ設定。
+- revision 11, 2026-07-21: 人間がUS-012、US-013、US-026の3 ACと8テスト仕様を承認し、Slice Bの第二境界をactive化。
