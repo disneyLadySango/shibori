@@ -72,6 +72,8 @@ export default function Home() {
   const [audioLoading, setAudioLoading] = useState(false);
   const [audioUrl, setAudioUrl] = useState("");
   const [availableFocus, setAvailableFocus] = useState("");
+  const [materialMinutes, setMaterialMinutes] = useState(15);
+  const [materialAttention, setMaterialAttention] = useState<"light" | "deep">("light");
   const [prioritizing, setPrioritizing] = useState(false);
   const [error, setError] = useState("");
   const [restored, setRestored] = useState(false);
@@ -121,7 +123,12 @@ export default function Home() {
     if (material.trim().length < 30) { setProjection(null); return; }
     const context = { role: nextState.purpose.role, goal: nextState.targetState ?? nextState.purpose.statement, why: nextState.purpose.why, updatedAt: new Date().toISOString() };
     const gaps = nextState.gaps.filter((gap) => gap.status !== "resolved").map((gap) => ({ id: gap.id, topic: gap.topic, reason: gap.reason, source: "user_reported" as const, resolved: false }));
-    const response = await fetch("/api/project", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context, material, gaps }) });
+    const current = nextState.path.find((node) => node.id === nextState.currentNodeId)?.title ?? "探索中";
+    const response = await fetch("/api/project", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+      context, material, gaps,
+      focusResource: { minutes: materialMinutes, attention: materialAttention },
+      learningPosition: { targetState: nextState.targetState, current, focus: nextState.focus?.title ?? "未選択" },
+    }) });
     const body = await response.json();
     if (!response.ok) throw new Error(body.error);
     setProjection(body);
@@ -239,8 +246,17 @@ export default function Home() {
     setPortfolio(reflectOnAllocation(portfolio, state.purpose.id, judgment, reason));
   }
 
+  async function refitMaterial(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!state) return;
+    setLoading(true); setError(""); setAudioUrl("");
+    try { await projectMaterial(state); }
+    catch (caught) { setError(caught instanceof Error ? caught.message : "教材を今回の集中資源へ合わせられませんでした。"); }
+    finally { setLoading(false); }
+  }
+
   async function playLecture() {
-    if (!projection) return;
+    if (!projection?.earScript) return;
     if (audioUrl) { await audioRef.current?.play(); return; }
     setAudioLoading(true);
     try {
@@ -303,10 +319,12 @@ export default function Home() {
       {state && <form className="other-focus" onSubmit={selectAnotherFocus}><label><span>OR CHOOSE YOURSELF</span>別の学びを選ぶ<input name="focus" placeholder="今はこれを学ぶ" /></label><button>この学びを選ぶ</button></form>}
     </section>
 
-    {projection && <section>
-      <SectionTitle number="03" note="教材は目的ではなく、いまの集中先に使う材料です。">集中先に合わせた教材</SectionTitle>
-      {projection.source === "demo" && <p className="demo-notice">デモモードです。APIキー設定時はGPT-5.6が同じ流れで再編集します。</p>}
-      <div className="allocation"><article className="ear-card"><span className="card-label">EAR · 移動中</span><h3>耳でつかむ</h3><p className="script">{projection.earScript}</p><div className="audio-row"><button onClick={playLecture} disabled={audioLoading}>{audioLoading ? "生成中…" : "▶ 講義を再生"}</button><span>AI生成音声</span></div>{audioUrl && <audio ref={audioRef} src={audioUrl} controls />}</article><article className="desk-card"><span className="card-label">DESK · 机の時間</span><h3>今日は、この1問。</h3><p className="problem">{projection.deskTask.problem}</p><div className="why"><span>WHY THIS ONE</span>{projection.deskTask.why}</div></article></div>
+    {state && material.trim().length >= 30 && <section>
+      <SectionTitle number="03" note="教材の順序ではなく、今回使える集中資源へ合わせて一つだけ選びます。">集中資源に合わせた教材</SectionTitle>
+      <form className="focus-resource-form" onSubmit={refitMaterial}><label><span>MINUTES</span>今回使える時間<input type="number" min="1" max="480" value={materialMinutes} onChange={(event) => setMaterialMinutes(Number(event.target.value))} /></label><label><span>ATTENTION</span>使える注意の深さ<select value={materialAttention} onChange={(event) => setMaterialAttention(event.target.value as "light" | "deep")}><option value="light">軽い集中</option><option value="deep">深い集中</option></select></label><button disabled={loading}>{loading ? "合わせています…" : "この集中資源でもう一度絞る"}</button></form>
+      {projection?.source === "demo" && <p className="demo-notice">デモモードです。APIキー設定時はGPT-5.6が同じ流れで再編集します。</p>}
+      {projection && <><div className="material-map"><h3>教材の位置づけ</h3>{projection.segments.map((segment, index) => <article key={`${segment.text}-${index}`} className={segment.position}><span>{({ now: "今使う", later: "後で使う", unrelated: "関係しない", unknown: "判断できない" } as const)[segment.position]}</span><div><strong>{segment.text}</strong><small>{segment.reason}</small></div><em>{segment.attention === "light" ? "軽い集中" : segment.attention === "deep" ? "深い集中" : "未判断"}</em></article>)}</div>
+      {projection.fit.status === "no_fit" ? <article className="no-fit-card"><span>NO FIT THIS TIME</span><h3>今回は、無理に選びません。</h3><p>{projection.fit.reason}</p><small>到達状態・現在地・理解状態は変更していません。</small></article> : <><article className="selected-material"><span>今回使う一つ</span><h3>{projection.selected?.text}</h3><p>{projection.fit.reason}</p></article>{projection.earScript && <div className="allocation single"><article className="ear-card"><span className="card-label">LIGHT · 軽い集中</span><h3>耳でつかむ</h3><p className="script">{projection.earScript}</p><div className="audio-row"><button onClick={playLecture} disabled={audioLoading}>{audioLoading ? "生成中…" : "▶ 講義を再生"}</button><span>聞いただけでは理解済みになりません</span></div>{audioUrl && <audio ref={audioRef} src={audioUrl} controls />}</article></div>}{projection.deskTask && <div className="allocation single"><article className="desk-card"><span className="card-label">DEEP · 深い集中</span><h3>今日は、この1問。</h3><p className="problem">{projection.deskTask.problem}</p><div className="why"><span>WHY THIS ONE</span>{projection.deskTask.why}</div></article></div>}</>}</>}
     </section>}
 
     <section className={!plan ? "muted-section" : ""}>

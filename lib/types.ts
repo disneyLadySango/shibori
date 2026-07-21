@@ -18,11 +18,29 @@ export type GapEntry = {
 };
 
 export type Projection = {
-  segments: Array<Pick<Segment, "text" | "mode" | "reason">>;
-  earScript: string;
-  deskTask: Pick<DeskTask, "problem" | "why">;
+  segments: Array<{
+    text: string;
+    position: "now" | "later" | "unrelated" | "unknown";
+    attention: "light" | "deep" | null;
+    reason: string;
+  }>;
+  fit: { status: "ready" | "no_fit"; reason: string };
+  selected: { text: string; attention: "light" | "deep"; reason: string } | null;
+  earScript: string | null;
+  deskTask: Pick<DeskTask, "problem" | "why"> | null;
   gaps: Array<Pick<GapEntry, "topic" | "reason">>;
   source?: "gpt-5.6" | "demo";
+};
+
+export type FocusResource = {
+  minutes: number;
+  attention: "light" | "deep";
+};
+
+export type LearningPosition = {
+  targetState: string | null;
+  current: string;
+  focus: string;
 };
 
 export type DeskEvaluation = {
