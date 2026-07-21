@@ -102,6 +102,37 @@ export type FocusRecommendation = {
   title: string;
   reason: string;
   nodeId: string | null;
+  source?: "personalized" | "demo" | "learner" | "inferred";
+};
+
+export type PositionCorrection = {
+  id: string;
+  kind: "position" | "dependency";
+  previousNodeId: string | null;
+  nodeId: string;
+  previousDependsOn: string[];
+  nextDependsOn: string[];
+  reason: string;
+  createdAt: string;
+};
+
+export type UnderstandingChallenge = {
+  id: string;
+  checkIndex: number;
+  nodeId: string;
+  reason: string;
+  status: "pending" | "reviewed";
+  resolutionCheckIndex: number | null;
+  createdAt: string;
+};
+
+export type FocusExplanation = {
+  basis: Array<{
+    label: "学習目的" | "到達状態" | "現在地" | "理解状態";
+    value: string;
+    certainty: "learner_input" | "confirmed" | "inferred" | "unknown";
+  }>;
+  uncertainty: string[];
 };
 
 export type UnderstandingCheckResult = {
@@ -131,6 +162,8 @@ export type LearningState = {
   focus: FocusRecommendation | null;
   lastCheck: UnderstandingCheckResult | null;
   checkHistory: UnderstandingCheckResult[];
+  positionCorrections: PositionCorrection[];
+  checkChallenges: UnderstandingChallenge[];
   gaps: LearningGap[];
   allocations: AllocationRecord[];
   allocationReflection: AllocationReflection | null;

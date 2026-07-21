@@ -20,6 +20,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ ...await planLearning(parsed.data), source: "gpt-5.6" });
   } catch (error) {
     console.error("Learning plan failed", error instanceof Error ? error.message : "Unknown error");
-    return NextResponse.json({ error: "次の集中先を決められませんでした。少し待ってもう一度お試しください。" }, { status: 502 });
+    return NextResponse.json({ error: "今回は個別の集中先を判断できませんでした。学習状態は変更していません。少し待って再試行するか、自分で別の学びを選べます。" }, { status: 502 });
   }
 }

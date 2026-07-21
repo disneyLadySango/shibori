@@ -6,6 +6,11 @@ import {
   completeReinforcement,
   createLearningState,
   deferGap,
+  challengeUnderstanding,
+  explainFocus,
+  learningDataPolicy,
+  recordPositionCorrection,
+  recordDependencyCorrection,
   resumeLearning,
   setLearningPlan,
 } from "./learning";
@@ -31,6 +36,123 @@ describe("US-001 exploration", () => {
     expect(exploring.phase).toBe("exploring");
     expect(exploring.focus?.title).toContain("重ね合わせ");
     expect(setLearningPlan(exploring, "重ね合わせを自分の言葉で説明できる", nodes).phase).toBe("learning");
+  });
+});
+
+describe("US-019 focus explanation", () => {
+  it("traces a recommendation to purpose, target, current position, and understanding", () => {
+    const checked = applyCheckResult(
+      setLearningPlan(createLearningState({ purpose: "統計を知りたい", role: "PM", why: "判断したい" }), "A/Bテストを判断できる", nodes),
+      { nodeId: "foundation", outcome: "confirmed", summary: "説明できた", nextAction: "p値へ進む", gap: null },
+    );
+
+    const explanation = explainFocus(checked);
+
+    expect(explanation.basis.map((item) => item.label)).toEqual(["学習目的", "到達状態", "現在地", "理解状態"]);
+    expect(explanation.basis.find((item) => item.label === "理解状態")?.certainty).toBe("confirmed");
+  });
+
+  it("marks missing evidence as uncertainty instead of a confirmed result", () => {
+    const state = chooseFocus(createLearningState({ purpose: "量子力学", role: "", why: "" }), {
+      id: "explore", kind: "explore", title: "概観", reason: "入口", nodeId: null,
+    });
+
+    const explanation = explainFocus(state);
+
+    expect(explanation.uncertainty).toContain("到達状態はまだ決まっていません");
+    expect(explanation.basis.some((item) => item.certainty === "unknown")).toBe(true);
+  });
+});
+
+describe("US-022 honest judgment boundaries", () => {
+  it("keeps the state unchanged when a requested position cannot be judged", () => {
+    const state = setLearningPlan(createLearningState({ purpose: "統計", role: "", why: "" }), "判断できる", nodes);
+    expect(recordPositionCorrection(state, { nodeId: "missing", reason: "ここだと思う" })).toBe(state);
+  });
+
+  it("distinguishes a learner choice from a personalized or demo judgment", () => {
+    const state = recordPositionCorrection(
+      setLearningPlan(createLearningState({ purpose: "統計", role: "", why: "" }), "判断できる", nodes),
+      { nodeId: "p-value", reason: "先に試したい" },
+    );
+    expect(state.focus?.source).toBe("learner");
+    const inferred = applyCheckResult(state, { nodeId: "p-value", outcome: "confirmed", summary: "説明できた", nextAction: "進む", gap: null });
+    expect(inferred.focus?.source).toBe("inferred");
+  });
+});
+
+describe("US-028 learning state transparency", () => {
+  it("states what is recorded, why it is used, and where it is shared", () => {
+    expect(learningDataPolicy.recorded).toContain("訂正履歴");
+    expect(learningDataPolicy.use).toContain("OpenAI API");
+    expect(learningDataPolicy.sharing).toContain("他の学習者へは共有しない");
+  });
+});
+
+describe("US-016 position correction", () => {
+  it("records the previous decision and changes focus without changing understanding", () => {
+    const state = applyCheckResult(
+      setLearningPlan(createLearningState({ purpose: "統計", role: "", why: "" }), "判断できる", nodes),
+      { nodeId: "foundation", outcome: "confirmed", summary: "説明できた", nextAction: "p値", gap: null },
+    );
+    const beforePath = state.path;
+    const beforeChecks = state.checkHistory;
+
+    const corrected = recordPositionCorrection(state, { nodeId: "decision", reason: "実務で先に判断を試したい" });
+
+    expect(corrected.positionCorrections[0]).toMatchObject({ previousNodeId: "p-value", nodeId: "decision" });
+    expect(corrected.currentNodeId).toBe("decision");
+    expect(corrected.focus?.source).toBe("learner");
+    expect(corrected.path).toEqual(beforePath);
+    expect(corrected.checkHistory).toEqual(beforeChecks);
+  });
+
+  it("preserves the previous dependency and unrelated understanding when correcting the path", () => {
+    const state = applyCheckResult(
+      setLearningPlan(createLearningState({ purpose: "統計", role: "", why: "" }), "判断できる", nodes),
+      { nodeId: "foundation", outcome: "confirmed", summary: "説明できた", nextAction: "進む", gap: null },
+    );
+    const checks = state.checkHistory;
+
+    const corrected = recordDependencyCorrection(state, { nodeId: "decision", dependsOn: ["foundation"], reason: "p値を経由せず判断練習できる" });
+
+    expect(corrected.path.find((node) => node.id === "decision")?.dependsOn).toEqual(["foundation"]);
+    expect(corrected.positionCorrections[0]).toMatchObject({ kind: "dependency", previousDependsOn: ["p-value"], nextDependsOn: ["foundation"] });
+    expect(corrected.checkHistory).toEqual(checks);
+    expect(corrected.path.find((node) => node.id === "foundation")?.status).toBe("confirmed");
+  });
+
+  it("rejects a dependency correction that would create a cycle", () => {
+    const state = setLearningPlan(createLearningState({ purpose: "統計", role: "", why: "" }), "判断できる", nodes);
+    expect(recordDependencyCorrection(state, { nodeId: "foundation", dependsOn: ["decision"], reason: "逆だと思う" })).toBe(state);
+  });
+});
+
+describe("US-029 understanding challenge", () => {
+  it("records an objection without overwriting the original result", () => {
+    const state = applyCheckResult(
+      setLearningPlan(createLearningState({ purpose: "統計", role: "", why: "" }), "判断できる", nodes),
+      { nodeId: "foundation", outcome: "gap", summary: "説明不足", nextAction: "補う", gap: { id: "g1", topic: "標本分布", reason: "不足", impact: "判断できない", returnNodeId: "foundation" } },
+    );
+
+    const challenged = challengeUnderstanding(state, "具体例は説明したので再確認したい");
+
+    expect(challenged.checkChallenges[0]).toMatchObject({ nodeId: "foundation", status: "pending" });
+    expect(challenged.checkHistory).toEqual(state.checkHistory);
+    expect(challenged.path).toEqual(state.path);
+  });
+
+  it("preserves the old result and links an additional check as the resolution", () => {
+    const checked = applyCheckResult(
+      setLearningPlan(createLearningState({ purpose: "統計", role: "", why: "" }), "判断できる", nodes),
+      { nodeId: "foundation", outcome: "gap", summary: "説明不足", nextAction: "補う", gap: { id: "g1", topic: "標本分布", reason: "不足", impact: "判断できない", returnNodeId: "foundation" } },
+    );
+    const challenged = challengeUnderstanding(checked, "再確認したい");
+    const reviewed = applyCheckResult(challenged, { nodeId: "foundation", outcome: "confirmed", summary: "追加説明で確認", nextAction: "進む", gap: null });
+
+    expect(reviewed.checkHistory.map((item) => item.outcome)).toEqual(["gap", "confirmed"]);
+    expect(reviewed.checkChallenges[0]).toMatchObject({ status: "reviewed", resolutionCheckIndex: 1 });
+    expect(reviewed.gaps.find((gap) => gap.id === "g1")?.status).toBe("resolved");
   });
 });
 
