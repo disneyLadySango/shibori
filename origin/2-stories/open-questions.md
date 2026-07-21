@@ -36,3 +36,10 @@
 - question: 学習目的だけがあり、到達状態がまだない場合、先にCanを決めてから学ぶか。興味を具体化する最初の学びを一つ推奨し、その経験からCanを後で作れるか。
 - answer: 到達状態を先に決めることを強制しない。興味を具体化する最初の学びを一つ推奨して開始し、その経験から到達状態を後でCanとして作れる。
 - reflected_in: `../1-language/glossary.md` revision 6, `../3-ac/backlog/US-001/AC-001.md` revision 4
+
+## Q-007 学習目的を続けない状態
+
+- state: `resolved`
+- question: 学習目的を一時的に外す状態と、今後続けない状態をどう区別するか。終了時に到達状態へ達したかどうかも区別するか。
+- answer: 「保留」ではなく、後で再開する前提の「休止」とする。終了は、学習者が到達状態へ達したと判断した「達成」と、到達前でも続けないと決めた「取止め」を区別する。状態変更だけで理解状態を更新しない。
+- reflected_in: `../1-language/glossary.md` revision 7, `US-013.md` revision 2, `../3-ac/backlog/US-013/AC-001.md` revision 2
