@@ -18,10 +18,12 @@ import {
   setLearningPlan,
   summarizeRemaining,
   updateLearningRhythm,
+  assessTargetAchievement,
+  reviewAllocationProgress,
   reconsiderTarget,
   rejectFocus,
 } from "./learning";
-import type { LearningPathNode } from "./types";
+import type { LearningPathNode, LearningState } from "./types";
 
 const nodes: LearningPathNode[] = [
   { id: "foundation", title: "標本分布を説明できる", dependsOn: [], status: "unconfirmed" },
@@ -66,6 +68,44 @@ describe("Wave 3 context adaptation", () => {
     const checked = applyCheckResult(setLearningPlan(createLearningState({ purpose: "統計", role: "", why: "" }), "判断できる", nodes), { nodeId: "foundation", outcome: "confirmed", summary: "説明できた", nextAction: "次", gap: null });
     const revised = reconsiderTarget(checked, "実験を設計できる", ["foundation"]);
     expect(revised.targetRevisions[0].previous).toBe("判断できる"); expect(revised.path[0].status).toBe("confirmed"); expect(revised.checkHistory).toEqual(checked.checkHistory); expect(revised.targetRevisions[0].reviewNodeIds).toEqual(["p-value", "decision"]);
+  });
+});
+
+describe("US-027 target achievement judgment", () => {
+  it("uses checks rather than study time and leaves the final decision to the learner", () => {
+    const state = setLearningPlan(createLearningState({ purpose: "統計", role: "", why: "" }), "A/Bテストを判断できる", nodes);
+    let checked: LearningState = { ...state, allocations: [{ id: "a1", depth: "deep", minutes: 300, note: "教材を完了", recordedAt: "2026-07-21" }] };
+    for (const node of nodes) checked = applyCheckResult(checked, { nodeId: node.id, outcome: "confirmed", summary: `${node.title}を確認`, nextAction: "次へ", gap: null });
+    const assessment = assessTargetAchievement(checked);
+    expect(assessment.status).toBe("ready_for_decision");
+    expect(assessment.basis).toHaveLength(3);
+    expect(assessment.finalDecisionOwner).toBe("learner");
+    expect(checked.purpose.status).toBe("active");
+  });
+
+  it("does not infer achievement from consumed time and identifies remaining checks", () => {
+    const state = { ...setLearningPlan(createLearningState({ purpose: "統計", role: "", why: "" }), "判断できる", nodes), allocations: [{ id: "a1", depth: "deep" as const, minutes: 999, note: "全教材", recordedAt: "2026-07-21" }] };
+    const assessment = assessTargetAchievement(state);
+    expect(assessment.status).toBe("checks_remaining");
+    expect(assessment.remaining).toEqual(nodes.map((node) => node.title));
+    expect(assessment.reason).toContain("時間");
+  });
+});
+
+describe("US-009 allocation review", () => {
+  it("separates invested attention from confirmed progress", () => {
+    const state = { ...setLearningPlan(createLearningState({ purpose: "統計", role: "", why: "" }), "判断できる", nodes), allocations: [{ id: "a1", depth: "deep" as const, minutes: 180, note: "教材", recordedAt: "2026-07-21" }] };
+    const review = reviewAllocationProgress(state);
+    expect(review.investedMinutes).toBe(180);
+    expect(review.confirmedCount).toBe(0);
+    expect(review.judgment).toBe("投入量だけでは接近を判断できない");
+  });
+
+  it("reflects unintended skew without prescribing equal allocation", () => {
+    const state = { ...createLearningState({ purpose: "統計", role: "", why: "" }), allocationReflection: { judgment: "unintended" as const, reason: "惰性で耳だけに偏った", recordedAt: "2026-07-21" } };
+    const review = reviewAllocationProgress(state);
+    expect(review.nextAllocationReason).toContain("惰性で耳だけに偏った");
+    expect(review.nextAllocationReason).not.toContain("均等");
   });
 });
 

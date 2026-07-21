@@ -157,6 +157,23 @@ export type GapRelation = {
   timing: string;
 };
 
+export type TargetAssessment = {
+  status: "ready_for_decision" | "checks_remaining" | "no_target";
+  basis: string[];
+  remaining: string[];
+  reason: string;
+  finalDecisionOwner: "learner";
+};
+
+export type AllocationProgressReview = {
+  investedMinutes: number;
+  byDepth: Record<"ear" | "desk" | "deep", number>;
+  confirmedCount: number;
+  gapCount: number;
+  judgment: string;
+  nextAllocationReason: string;
+};
+
 export type LearningGap = {
   id: string;
   topic: string;

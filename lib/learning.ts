@@ -9,6 +9,8 @@ import type {
   NextMove,
   GapRelation,
   UnderstandingCheckResult,
+  TargetAssessment,
+  AllocationProgressReview,
 } from "./types";
 
 const pathNodeSchema = z.object({
@@ -189,6 +191,39 @@ export function summarizeRemaining(state: LearningState) {
     gaps: state.path.filter((node) => node.status === "gap"),
     unconfirmed: state.path.filter((node) => node.status === "unconfirmed" || node.status === "unknown"),
     note: "未確認は、できないと判明した抜けではありません。順序は状況に応じて見直せます。",
+  };
+}
+
+export function assessTargetAchievement(state: LearningState): TargetAssessment {
+  if (!state.targetState) return { status: "no_target", basis: [], remaining: [], reason: "到達状態が未設定のため、探索を続けます。", finalDecisionOwner: "learner" };
+  const confirmed = state.path.filter((node) => node.status === "confirmed");
+  const remaining = state.path.filter((node) => node.status !== "confirmed");
+  if (!remaining.length && state.path.length > 0) {
+    return { status: "ready_for_decision", basis: confirmed.map((node) => node.title), remaining: [], reason: "到達状態に必要な項目を確認できました。達成とするかはあなたが決めます。", finalDecisionOwner: "learner" };
+  }
+  return {
+    status: "checks_remaining",
+    basis: confirmed.map((node) => node.title),
+    remaining: remaining.map((node) => node.title),
+    reason: "使った時間や教材量ではなく、残る理解確認があるため到達済みとは判断しません。",
+    finalDecisionOwner: "learner",
+  };
+}
+
+export function reviewAllocationProgress(state: LearningState): AllocationProgressReview {
+  const byDepth = state.allocations.reduce((total, record) => ({ ...total, [record.depth]: total[record.depth] + record.minutes }), { ear: 0, desk: 0, deep: 0 });
+  const confirmedCount = state.path.filter((node) => node.status === "confirmed").length;
+  const gapCount = state.path.filter((node) => node.status === "gap").length;
+  const nextAllocationReason = state.allocationReflection?.judgment === "unintended"
+    ? `意図しない偏り「${state.allocationReflection.reason}」を避け、未確認または抜けへ次の集中資源を配ります。`
+    : "現在の配分意図を保ち、次の確認結果を見て判断します。";
+  return {
+    investedMinutes: state.allocations.reduce((sum, record) => sum + record.minutes, 0),
+    byDepth,
+    confirmedCount,
+    gapCount,
+    judgment: confirmedCount > 0 ? `確認できた項目が${confirmedCount}件増えました` : "投入量だけでは接近を判断できない",
+    nextAllocationReason,
   };
 }
 
