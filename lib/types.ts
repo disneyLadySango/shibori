@@ -143,6 +143,20 @@ export type UnderstandingCheckResult = {
   gap: Omit<LearningGap, "status"> | null;
 };
 
+export type NextMove = {
+  kind: "advance" | "retry" | "complete";
+  title: string;
+  reason: string;
+  scope: string;
+  preserved: string;
+};
+
+export type GapRelation = {
+  kind: "required" | "unknown";
+  explanation: string;
+  timing: string;
+};
+
 export type LearningGap = {
   id: string;
   topic: string;
