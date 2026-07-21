@@ -185,7 +185,7 @@ export default function Home() {
       const response = await fetch("/api/prioritize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ portfolio, availableFocus }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error);
-      setPortfolio(setPurposeRecommendation(portfolio, body as PurposeRecommendation));
+      setPortfolio((current) => current ? setPurposeRecommendation(current, body as PurposeRecommendation) : current);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "学習目的をおすすめできませんでした。"); }
     finally { setPrioritizing(false); }
   }
