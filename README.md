@@ -1,17 +1,18 @@
 # Shibori / シボリ
 
-教材を、移動中に聴く講義と机で解く一問に絞る「集中のポートフォリオマネージャー」です。OpenAI Build Week Education Track向けMVPとして、教材と学習者コンテキストを掛け合わせ、GPT-5.6が集中コストを配分します。
+学習目的・到達状態・理解状態をつなぎ、「次に集中する一つ」を提案する学習支援プロダクトです。興味だけでも始められ、学びながら「何ができるようになりたいか」を見つけられます。
 
-> **Education Track** — 働きながら学ぶ人の希少資源「深く集中できる時間」を、教材ではなく学習者を中心に配り直します。
+OpenAI Build Week Education Track向けのSlice Aでは、次の一周を実装しています。
 
-## Demo flow
+1. 学習目的だけで探索を始める、またはCanで到達状態を置く
+2. 到達状態への依存関係と現在地を可視化する
+3. GPT-5.6が次の集中先を一つだけ提案する
+4. 教材があれば、耳でつかむ講義と机の一問へ再編集する
+5. 回答から理解状態を確認し、できた部分を残して不足だけを「抜け」にする
+6. 補強を今するか後にするか選び、終えたら保存した場所へ戻る
+7. ブラウザを閉じても現在地・集中先・抜けから再開する
 
-1. 「エンジニア兼PM / 統計を学びたい / A/Bテストを設計したい」を入力して保存します。
-2. 「サンプル教材を入れる」から「この教材を、絞る」を押します。
-3. 耳3段落、机1段落への仕分けと、3分講義・今日の一問を確認します。
-4. APIキー設定時は「講義を再生」から日本語TTSを再生できます。
-5. 今日の一問へ途中の考えを書き、GPT-5.6の評価・模範解答・次の一手を受け取ります。
-6. 回答のつまずき、または段落の「わからなかった」が抜けマップへ入り、もう一度絞ると講義冒頭に補講が入ります。
+おすすめは一つに絞りますが、学習者は別の学びを選べます。教材を読んだ・聞いたという事実だけでは理解済みにしません。
 
 ## Setup
 
@@ -21,41 +22,42 @@ cp .env.example .env.local
 npm run dev
 ```
 
-`.env.local` に `OPENAI_API_KEY` を設定してください。キーがない場合もデモ投影でUIとフィードバックループを確認できます。画面にはデモモードであることが明示されます。
+`.env.local` に `OPENAI_API_KEY` を設定してください。未設定でも、デモモードで探索・経路・理解確認・補強のループを確認できます。
 
 ## OpenAI integration
 
-- `gpt-5.6`: Responses APIを1回呼び出し、Zod由来のstrict structured outputで段落仕分け、講義、今日の一問、前提抜けを同時生成します。
-- `gpt-5.6`: 今日の一問への回答を、最終結果だけでなく途中の考え方まで評価し、次の一手と抜け候補を生成します。
-- `gpt-4o-mini-tts`: Audio Speech APIで日本語MP3を生成します。これはLLM投影ではなく専用音声合成モデルです。
-- APIキーはサーバー側だけで参照し、ブラウザへ渡しません。
+- `gpt-5.6`: 学習経路、現在地、次の集中先、理解確認の問いをstrict structured outputで提案
+- `gpt-5.6`: 学習者の回答から、確認できたことと一件の抜けをstrict structured outputで判定
+- `gpt-5.6`: 任意の教材を耳パート・机パート・前提の抜けへ再編集
+- `gpt-4o-mini-tts`: 専用Speech APIで日本語講義を音声化（LLM判断とは区別）
 
-GPT-5.6の中核実装は [`lib/openai.ts`](lib/openai.ts)、教材とユーザーコンテキストを掛け合わせるプロンプトは [`lib/shibori.ts`](lib/shibori.ts)、strict schemaは同ファイルの `projectionSchema` にあります。審査時にモデル活用箇所を短時間で追える構成です。
-
-## Why GPT-5.6
-
-Shiboriは単なる要約ではありません。ひとつの教材について、段落ごとの集中コスト、学習者の活動に寄せた比喩、今日解くべき一問、前提知識の欠落を相互に整合させる必要があります。GPT-5.6を一度のstructured output呼び出しに集約することで、耳・机・抜けマップが同じ教育判断から生成されます。未解決の抜けは次回プロンプトへ戻り、講義冒頭の補講へ変わります。
-
-## Architecture
+中核は [`lib/openai.ts`](lib/openai.ts)、学習計画と理解確認のスキーマ・プロンプトは [`lib/planning.ts`](lib/planning.ts)、露出と理解更新を分離する状態遷移は [`lib/learning.ts`](lib/learning.ts) にあります。APIキーはサーバー側だけで参照します。
 
 ```text
-Material ─┐
-Context ──┼─> GPT-5.6 structured projection ─┬─> Ear script ─> TTS
-Gap map ──┘                                  ├─> One desk task
-                                            └─> Detected gaps ─┐
-User: "わからなかった" ───────────────────────────────────────┘
-Desk answer ─> GPT-5.6 reasoning evaluation ─> Feedback / gap ──┘
+学習目的 ─┬─> 探索 ─> Canの発見 ─┐
+          └─> 到達状態(Can) ─────┼─> 学習経路 / 現在地
+理解状態・抜け ──────────────────┘          │
+                                             v
+                                  GPT-5.6: 次の一つ
+                                             │
+                   教材 ─> 耳 / 机 <────────┤
+                                             v
+                                      理解確認
+                                   ┌─────────┴────────┐
+                                 確認              抜け
+                                   │       今補強 / 後で / 別の学び
+                                   └─────────> 再配分・再開
 ```
 
-## Build Week submission assets
+## Origin and roadmap
 
-- [`docs/DEVPOST_SUBMISSION.md`](docs/DEVPOST_SUBMISSION.md): project description and judging-criteria narrative
-- [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md): public YouTube demo under three minutes, including Codex and GPT-5.6 narration
-- [`LICENSE`](LICENSE): repository judging and testing license
+意図と成果基準の唯一の正は [`origin/`](origin/) です。ユビキタス言語、個別ユーザーストーリー、1つのストーリーマップ兼ロードマップ、ストーリー単位のAC、How単位のテスト仕様を分離しています。実装上の固定判断は [`decisions/`](decisions/) に記録します。
 
-## Local data
+## Build Week assets
 
-`UserContext` と `GapEntry` はブラウザのlocalStorageへ保存します。教材本文と生成結果はMVPでは永続化せず、認証・課金・RSS・OCR・体系的な単元依存グラフは対象外です。
+- [`docs/DEVPOST_SUBMISSION.md`](docs/DEVPOST_SUBMISSION.md)
+- [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md)
+- [`LICENSE`](LICENSE)
 
 ## Verification
 

@@ -1,13 +1,13 @@
 # ADR-0003: 単一ユーザー状態の端末内保持
 
-- Status: observed
+- Status: accepted
 - Date: 2026-07-20
 
 ## Context
 
 既存MVPは認証・同期を対象外とし、中断後の再開を短期間で検証する必要があった。
 
-## Observed decision
+## Decision
 
 学習者の目的、理解状態、現在の学習セッションを利用端末内に保持する。
 

@@ -2,7 +2,45 @@ import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 
 import { buildEvaluationPrompt, buildProjectionPrompt, deskEvaluationSchema, projectionSchema } from "./shibori";
-import type { DeskEvaluation, GapEntry, Projection, UserContext } from "./types";
+import { buildCheckPrompt, buildLearningPlanPrompt, learningPlanSchema, understandingCheckSchema } from "./planning";
+import type { DeskEvaluation, GapEntry, LearningPlanProposal, LearningState, Projection, UnderstandingCheckResult, UserContext } from "./types";
+
+export async function planLearning(input: {
+  state: LearningState;
+  material?: string;
+}): Promise<LearningPlanProposal> {
+  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const response = await client.responses.parse({
+    model: "gpt-5.6",
+    input: [
+      { role: "system", content: "学習者の意思決定を奪わず、次に集中する一つを日本語で提案してください。" },
+      { role: "user", content: buildLearningPlanPrompt(input) },
+    ],
+    text: { format: zodTextFormat(learningPlanSchema, "shibori_learning_plan") },
+  });
+
+  if (!response.output_parsed) throw new Error("GPT-5.6 did not return a learning plan.");
+  return response.output_parsed;
+}
+
+export async function checkUnderstanding(input: {
+  state: LearningState;
+  prompt: string;
+  answer: string;
+}): Promise<UnderstandingCheckResult> {
+  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const response = await client.responses.parse({
+    model: "gpt-5.6",
+    input: [
+      { role: "system", content: "学習者が今できることを回答だけから判定し、日本語で返してください。" },
+      { role: "user", content: buildCheckPrompt(input) },
+    ],
+    text: { format: zodTextFormat(understandingCheckSchema, "shibori_understanding_check") },
+  });
+
+  if (!response.output_parsed) throw new Error("GPT-5.6 did not return an understanding check.");
+  return response.output_parsed;
+}
 
 export async function projectMaterial(input: {
   context: UserContext;

@@ -41,3 +41,70 @@ export type LearningSession = {
   evaluation: DeskEvaluation | null;
   updatedAt: string;
 };
+
+export type LearningPurpose = {
+  id: string;
+  statement: string;
+  role: string;
+  why: string;
+  priority: "normal";
+  createdAt: string;
+};
+
+export type LearningPathNode = {
+  id: string;
+  title: string;
+  dependsOn: string[];
+  status: "unknown" | "unconfirmed" | "confirmed" | "gap";
+};
+
+export type FocusRecommendation = {
+  id: string;
+  kind: "explore" | "learn" | "reinforce";
+  title: string;
+  reason: string;
+  nodeId: string | null;
+};
+
+export type UnderstandingCheckResult = {
+  nodeId: string;
+  outcome: "confirmed" | "gap";
+  summary: string;
+  nextAction: string;
+  gap: Omit<LearningGap, "status"> | null;
+};
+
+export type LearningGap = {
+  id: string;
+  topic: string;
+  reason: string;
+  impact: string;
+  returnNodeId: string;
+  status: "recommended" | "deferred" | "resolved";
+};
+
+export type LearningState = {
+  version: 2;
+  purpose: LearningPurpose;
+  phase: "exploring" | "learning";
+  targetState: string | null;
+  path: LearningPathNode[];
+  currentNodeId: string | null;
+  focus: FocusRecommendation | null;
+  lastCheck: UnderstandingCheckResult | null;
+  gaps: LearningGap[];
+  updatedAt: string;
+};
+
+export type LearningPlanProposal = {
+  mode: "exploring" | "learning";
+  targetState: string | null;
+  path: LearningPathNode[];
+  currentNodeId: string | null;
+  focus: FocusRecommendation;
+  check: {
+    nodeId: string | null;
+    prompt: string;
+    reason: string;
+  };
+};

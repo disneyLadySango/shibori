@@ -5,7 +5,7 @@ import { projectMaterial } from "@/lib/openai";
 import { createDemoProjection, sampleMaterial } from "@/lib/shibori";
 
 const requestSchema = z.object({
-  context: z.object({ role: z.string().min(1), goal: z.string().min(1), why: z.string().min(1), updatedAt: z.string() }),
+  context: z.object({ role: z.string(), goal: z.string().min(1), why: z.string(), updatedAt: z.string() }),
   material: z.string().min(30).max(30_000),
   gaps: z.array(z.object({
     id: z.string(), topic: z.string(), reason: z.string(),

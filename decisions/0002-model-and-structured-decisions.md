@@ -1,13 +1,13 @@
 # ADR-0002: 言語モデル判断と構造化出力
 
-- Status: observed
+- Status: accepted
 - Date: 2026-07-20
 
 ## Context
 
 Build WeekではGPT-5.6の利用が外部制約である。配分、理解評価、学習経路の判断結果を射影側が安全に扱うには、期待する形と実際の出力のずれを減らす必要がある。
 
-## Observed decision
+## Decision
 
 - すべての言語モデル判断にGPT-5.6を使用する。
 - 機械的に利用する判断はstrict structured outputsで受け取る。

@@ -7,8 +7,8 @@ const sans = Noto_Sans_JP({ subsets: ["latin"], variable: "--font-sans" });
 const mincho = Shippori_Mincho({ weight: ["400", "600", "700"], subsets: ["latin"], variable: "--font-mincho" });
 
 export const metadata: Metadata = {
-  title: "シボリ — 集中のポートフォリオマネージャー",
-  description: "教材を、耳で聴く講義と机で解く一問に絞る学習支援プロダクト",
+  title: "シボリ — 学びたいを、次のひとつに",
+  description: "学習目的・到達状態・理解状態から、いま集中する一つを提案する学習支援プロダクト",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
