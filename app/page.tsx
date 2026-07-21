@@ -15,8 +15,12 @@ import {
   createPortfolio,
   getSelectedLearningState,
   resumePortfolio,
+  recordAllocation,
+  reflectOnAllocation,
   selectLearningPurpose,
+  setPurposeStatus,
   setPurposeRecommendation,
+  updatePurposeContext,
   updateLearningPurpose,
 } from "@/lib/portfolio";
 import { sampleMaterial } from "@/lib/shibori";
@@ -29,8 +33,8 @@ import type {
   UnderstandingCheckResult,
 } from "@/lib/types";
 
-const storageKey = "shibori-learning-portfolio-v3";
-const legacyStorageKey = "shibori-learning-state-v2";
+const storageKey = "shibori-learning-portfolio-v4";
+const legacyStorageKeys = ["shibori-learning-portfolio-v3", "shibori-learning-state-v2"];
 
 function Aperture({ active, complete }: { active?: boolean; complete?: boolean }) {
   return <svg className={`aperture ${active ? "is-active" : ""} ${complete ? "is-complete" : ""}`} viewBox="0 0 64 64" aria-hidden="true">
@@ -46,6 +50,10 @@ function SectionTitle({ number, children, note }: { number: string; children: Re
 
 function statusLabel(status: string) {
   return { unknown: "関係を確認中", unconfirmed: "未確認", confirmed: "確認できた", gap: "補強候補" }[status] ?? status;
+}
+
+function purposeStatusLabel(status: string) {
+  return { active: "進行中", paused: "休止", achieved: "達成", stopped: "取止め" }[status] ?? status;
 }
 
 export default function Home() {
@@ -71,11 +79,11 @@ export default function Home() {
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
-      const serialized = localStorage.getItem(storageKey) ?? localStorage.getItem(legacyStorageKey);
+      const serialized = localStorage.getItem(storageKey) ?? legacyStorageKeys.map((key) => localStorage.getItem(key)).find(Boolean);
       if (!serialized) return;
       try {
         setPortfolio(resumePortfolio(serialized)); setRestored(true);
-      } catch { localStorage.removeItem(storageKey); localStorage.removeItem(legacyStorageKey); }
+      } catch { localStorage.removeItem(storageKey); legacyStorageKeys.forEach((key) => localStorage.removeItem(key)); }
     });
     return () => cancelAnimationFrame(frame);
   }, []);
@@ -178,16 +186,57 @@ export default function Home() {
     setPlan(null); setProjection(null); setResult(null); setAnswer(""); setError("");
   }
 
-  async function recommendPurpose() {
-    if (!portfolio || portfolio.purposes.length < 2) return;
+  async function recommendPurpose(candidate: LearningPortfolio | null = portfolio) {
+    if (!candidate || !candidate.purposes.some((item) => item.purpose.status === "active")) return;
     setPrioritizing(true); setError("");
     try {
-      const response = await fetch("/api/prioritize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ portfolio, availableFocus }) });
+      const response = await fetch("/api/prioritize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ portfolio: candidate, availableFocus }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error);
       setPortfolio((current) => current ? setPurposeRecommendation(current, body as PurposeRecommendation) : current);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "学習目的をおすすめできませんでした。"); }
     finally { setPrioritizing(false); }
+  }
+
+  async function changePurposeContext(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!portfolio || !state) return;
+    const data = new FormData(event.currentTarget);
+    const next = updatePurposeContext(portfolio, state.purpose.id, {
+      deadline: String(data.get("deadline") || "") || null,
+      importance: String(data.get("importance") || "normal") as "low" | "normal" | "high",
+      usageContext: String(data.get("usageContext") || "").trim(),
+    });
+    setPortfolio(next);
+    await recommendPurpose(next);
+  }
+
+  function changePurposeStatus(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!portfolio || !state) return;
+    const data = new FormData(event.currentTarget);
+    const status = String(data.get("status")) as LearningState["purpose"]["status"];
+    const reason = String(data.get("statusReason") || "").trim();
+    if (!reason) { setError("休止・再開・終了の理由を入力してください。"); return; }
+    setPortfolio(setPurposeStatus(portfolio, state.purpose.id, status, reason));
+    setPlan(null); setProjection(null); setResult(null); setError("");
+  }
+
+  function saveAllocation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!portfolio || !state) return;
+    const data = new FormData(event.currentTarget);
+    const minutes = Number(data.get("minutes"));
+    if (!Number.isInteger(minutes) || minutes <= 0) { setError("使った時間を1分以上で入力してください。"); return; }
+    setPortfolio(recordAllocation(portfolio, state.purpose.id, { depth: String(data.get("depth")) as "ear" | "desk" | "deep", minutes, note: String(data.get("allocationNote") || "").trim() }));
+    event.currentTarget.reset(); setError("");
+  }
+
+  function saveReflection(judgment: "intentional" | "unintended") {
+    if (!portfolio || !state) return;
+    const reason = window.prompt(judgment === "intentional" ? "この偏りを意図した理由は？" : "意図しなかった偏りについて教えてください")?.trim();
+    if (!reason) return;
+    setPortfolio(reflectOnAllocation(portfolio, state.purpose.id, judgment, reason));
   }
 
   async function playLecture() {
@@ -203,6 +252,7 @@ export default function Home() {
   }
 
   const openGaps = state?.gaps.filter((gap) => gap.status !== "resolved") ?? [];
+  const latestContextChange = portfolio?.contextChanges.at(-1);
 
   return <main>
     <header className="hero">
@@ -216,12 +266,16 @@ export default function Home() {
     <section>
       <SectionTitle number="00" note="複数の学びを混ぜずに持ち、最終的にどれを選ぶかはあなたが決めます。">学習ポートフォリオ</SectionTitle>
       {portfolio && <div className="portfolio-panel">
-        <div className="purpose-tabs">{portfolio.purposes.map((item) => <button type="button" key={item.purpose.id} className={item.purpose.id === portfolio.selectedPurposeId ? "selected" : ""} onClick={() => choosePurpose(item.purpose.id)}><span>{item.purpose.id === portfolio.selectedPurposeId ? "選択中" : item.phase === "exploring" ? "探索中" : "続きあり"}</span><strong>{item.purpose.statement}</strong><small>{item.targetState ?? "Canはこれから"}</small></button>)}</div>
-        {portfolio.purposes.length > 1 && <div className="portfolio-choice">
-          <label><span>AVAILABLE FOCUS</span>今使える集中資源（任意）<input value={availableFocus} onChange={(event) => setAvailableFocus(event.target.value)} placeholder="例: 深い集中を30分 / 移動中に15分" /></label>
-          <button type="button" onClick={recommendPurpose} disabled={prioritizing}>{prioritizing ? "目的間の配分を考えています…" : "次の学習目的を一つおすすめ"}</button>
+        <div className="purpose-tabs">{portfolio.purposes.map((item) => <button type="button" key={item.purpose.id} className={`${item.purpose.id === portfolio.selectedPurposeId ? "selected" : ""} ${item.purpose.status}`} onClick={() => choosePurpose(item.purpose.id)}><span>{purposeStatusLabel(item.purpose.status)}{item.purpose.id === portfolio.selectedPurposeId ? " · 表示中" : ""}</span><strong>{item.purpose.statement}</strong><small>{item.targetState ?? "Canはこれから"}</small></button>)}</div>
+        {state && <div className="purpose-management">
+          <form onSubmit={changePurposeContext} className="purpose-context-form"><h3>状況を更新して、おすすめを見直す</h3><label><span>DEADLINE</span>期限<input name="deadline" type="date" defaultValue={state.purpose.deadline ?? ""} key={`${state.purpose.id}-deadline-${state.purpose.deadline}`} /></label><label><span>IMPORTANCE</span>いまの重要度<select name="importance" defaultValue={state.purpose.importance} key={`${state.purpose.id}-importance-${state.purpose.importance}`}><option value="low">低い</option><option value="normal">通常</option><option value="high">高い</option></select></label><label><span>USE CONTEXT</span>利用場面<input name="usageContext" defaultValue={state.purpose.usageContext} key={`${state.purpose.id}-usage-${state.purpose.usageContext}`} placeholder="例: 来週のA/Bテスト会議" /></label><button>保存して再評価</button></form>
+          <form onSubmit={changePurposeStatus} className="purpose-status-form"><h3>続け方を変える</h3><label><span>STATUS</span>状態<select name="status" defaultValue={state.purpose.status} key={`${state.purpose.id}-status-${state.purpose.status}`}><option value="active">進行中</option><option value="paused">休止</option><option value="achieved">達成</option><option value="stopped">取止め</option></select></label><label><span>REASON</span>理由<input name="statusReason" defaultValue={state.purpose.statusReason} key={`${state.purpose.id}-reason-${state.purpose.statusReason}`} placeholder="後で戻る自分にも分かる理由" /></label><button>状態を記録</button></form>
         </div>}
-        {portfolio.recommendation && <article className="purpose-recommendation"><span>GPT-5.6 RECOMMENDS ONE</span><h3>{portfolio.purposes.find((item) => item.purpose.id === portfolio.recommendation?.purposeId)?.purpose.statement}</h3><p>{portfolio.recommendation.reason}</p><small>判断に使ったこと: {portfolio.recommendation.basis.join(" / ")}</small><div><button type="button" onClick={() => choosePurpose(portfolio.recommendation!.purposeId)}>このおすすめを選ぶ</button><em>別の目的を選んでも、失敗にはなりません。</em></div></article>}
+        {portfolio.purposes.filter((item) => item.purpose.status === "active").length > 1 && <div className="portfolio-choice">
+          <label><span>AVAILABLE FOCUS</span>今使える集中資源（任意）<input value={availableFocus} onChange={(event) => setAvailableFocus(event.target.value)} placeholder="例: 深い集中を30分 / 移動中に15分" /></label>
+          <button type="button" onClick={() => void recommendPurpose()} disabled={prioritizing}>{prioritizing ? "目的間の配分を考えています…" : "次の学習目的を一つおすすめ"}</button>
+        </div>}
+        {portfolio.recommendation && <article className="purpose-recommendation"><span>GPT-5.6 RECOMMENDS ONE</span><h3>{portfolio.purposes.find((item) => item.purpose.id === portfolio.recommendation?.purposeId)?.purpose.statement}</h3><p>{portfolio.recommendation.reason}</p><small>判断に使ったこと: {portfolio.recommendation.basis.join(" / ")}</small>{portfolio.recommendationHistory.length > 1 && <details><summary>変更前のおすすめと比べる</summary><p>変更前: {portfolio.purposes.find((item) => item.purpose.id === portfolio.recommendationHistory.at(-2)?.purposeId)?.purpose.statement} — {portfolio.recommendationHistory.at(-2)?.reason}</p><p>変更後: {portfolio.recommendation.reason}</p>{latestContextChange && <p>変わった状況: 期限 {latestContextChange.before.deadline || "未設定"} → {latestContextChange.after.deadline || "未設定"} / 重要度 {latestContextChange.before.importance} → {latestContextChange.after.importance} / 利用場面 {latestContextChange.before.usageContext || "未設定"} → {latestContextChange.after.usageContext || "未設定"}</p>}</details>}<div><button type="button" onClick={() => choosePurpose(portfolio.recommendation!.purposeId)}>このおすすめを選ぶ</button><em>別の目的を選んでも、失敗にはなりません。</em></div></article>}
       </div>}
       <h3 className="add-purpose-title">{portfolio ? "学習目的をもう一つ加える" : "最初の学習目的"}</h3>
       <form className="purpose-form" onSubmit={begin}>
@@ -264,6 +318,10 @@ export default function Home() {
       <SectionTitle number={projection ? "05" : "04"} note="理由と影響を見て、今補強するか、後にするか選べます。">抜けと補強</SectionTitle>
       {!openGaps.length ? <p className="empty-state">理解確認で不足が見つかると、元の学びへ戻る場所と一緒に記録します。</p> : <div className="gap-list">{openGaps.map((gap) => <article key={gap.id}><span>{gap.status === "deferred" ? "あとで補強" : "補強おすすめ"}</span><div><h3>{gap.topic}</h3><p>{gap.reason}</p><p><strong>影響:</strong> {gap.impact}</p></div><div className="gap-actions"><button onClick={() => commitLearningState(chooseFocus(state!, { id: `reinforce-${gap.id}`, kind: "reinforce", title: gap.topic, reason: `${gap.reason}。${gap.impact}`, nodeId: gap.returnNodeId }))}>今、補強する</button><button onClick={() => commitLearningState(deferGap(state!, gap.id))}>あとで</button><button onClick={() => commitLearningState(completeReinforcement(state!, gap.id))}>補強を終えて戻る</button></div></article>)}</div>}
     </section>
+    {state && <section>
+      <SectionTitle number={projection ? "06" : "05"} note="使った集中資源と理解確認の結果は、別の事実として振り返ります。">配分の振り返り</SectionTitle>
+      <div className="allocation-review"><form onSubmit={saveAllocation}><h3>今回使った集中資源</h3><label><span>DEPTH</span>集中の深さ<select name="depth"><option value="ear">耳・ながら</option><option value="desk">机</option><option value="deep">深い集中</option></select></label><label><span>MINUTES</span>時間（分）<input name="minutes" type="number" min="1" required /></label><label><span>NOTE</span>何に使った？<input name="allocationNote" placeholder="教材を読んだ、問題を解いたなど" /></label><button>配分として記録</button></form><div className="allocation-summary"><h3>この目的の記録</h3><strong>{state.allocations.reduce((sum, item) => sum + item.minutes, 0)}分</strong><p>理解確認: {state.checkHistory.length}回（確認できた {state.checkHistory.filter((item) => item.outcome === "confirmed").length}回）</p><small>時間を使っただけでは、理解できたことにはなりません。</small><div><button onClick={() => saveReflection("intentional")}>この偏りは意図した</button><button onClick={() => saveReflection("unintended")}>意図しない偏りだった</button></div>{state.allocationReflection && <p className="reflection-result">{state.allocationReflection.judgment === "intentional" ? "意図した偏り" : "次のおすすめへ反映"}: {state.allocationReflection.reason}</p>}</div></div>
+    </section>}
     <footer><Aperture /><p>SHIBORI<br /><span>Focus on what deserves focus.</span></p></footer>
   </main>;
 }

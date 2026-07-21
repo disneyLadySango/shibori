@@ -23,6 +23,12 @@ export const learningStateSchema = z.object({
     role: z.string(),
     why: z.string(),
     priority: z.literal("normal"),
+    deadline: z.string().nullable().default(null),
+    importance: z.enum(["low", "normal", "high"]).default("normal"),
+    usageContext: z.string().default(""),
+    status: z.enum(["active", "paused", "achieved", "stopped"]).default("active"),
+    statusReason: z.string().default(""),
+    statusChangedAt: z.string().default(""),
     createdAt: z.string(),
   }),
   phase: z.enum(["exploring", "learning"]),
@@ -45,6 +51,10 @@ export const learningStateSchema = z.object({
       id: z.string(), topic: z.string(), reason: z.string(), impact: z.string(), returnNodeId: z.string(),
     }).nullable(),
   }).nullable(),
+  checkHistory: z.array(z.object({
+    nodeId: z.string(), outcome: z.enum(["confirmed", "gap"]), summary: z.string(), nextAction: z.string(),
+    gap: z.object({ id: z.string(), topic: z.string(), reason: z.string(), impact: z.string(), returnNodeId: z.string() }).nullable(),
+  })).default([]),
   gaps: z.array(z.object({
     id: z.string(),
     topic: z.string(),
@@ -53,6 +63,10 @@ export const learningStateSchema = z.object({
     returnNodeId: z.string(),
     status: z.enum(["recommended", "deferred", "resolved"]),
   })),
+  allocations: z.array(z.object({
+    id: z.string(), depth: z.enum(["ear", "desk", "deep"]), minutes: z.number().int().positive(), note: z.string(), recordedAt: z.string(),
+  })).default([]),
+  allocationReflection: z.object({ judgment: z.enum(["intentional", "unintended"]), reason: z.string(), recordedAt: z.string() }).nullable().default(null),
   updatedAt: z.string(),
 });
 
@@ -71,14 +85,17 @@ export function createLearningState(input: { purpose: string; role: string; why:
   const createdAt = now();
   return {
     version: 2,
-    purpose: { id: crypto.randomUUID(), statement: input.purpose, role: input.role, why: input.why, priority: "normal", createdAt },
+    purpose: { id: crypto.randomUUID(), statement: input.purpose, role: input.role, why: input.why, priority: "normal", deadline: null, importance: "normal", usageContext: "", status: "active", statusReason: "", statusChangedAt: createdAt, createdAt },
     phase: "exploring",
     targetState: null,
     path: [],
     currentNodeId: null,
     focus: null,
     lastCheck: null,
+    checkHistory: [],
     gaps: [],
+    allocations: [],
+    allocationReflection: null,
     updatedAt: createdAt,
   };
 }
@@ -106,6 +123,7 @@ export function applyCheckResult(state: LearningState, result: UnderstandingChec
       currentNodeId: next?.id ?? result.nodeId,
       focus: next ? { id: `focus-${next.id}`, kind: "learn", title: next.title, reason: result.nextAction, nodeId: next.id } : null,
       lastCheck: result,
+      checkHistory: [...state.checkHistory, result],
       updatedAt: now(),
     };
   }
@@ -118,6 +136,7 @@ export function applyCheckResult(state: LearningState, result: UnderstandingChec
     currentNodeId: result.nodeId,
     focus: { id: `reinforce-${gap.id}`, kind: "reinforce", title: gap.topic, reason: `${gap.reason}。${gap.impact}`, nodeId: result.nodeId },
     lastCheck: result,
+    checkHistory: [...state.checkHistory, result],
     gaps: [...state.gaps.filter((item) => item.id !== gap.id), gap],
     updatedAt: now(),
   };

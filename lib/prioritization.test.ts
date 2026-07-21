@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createLearningState } from "./learning";
-import { addLearningPurpose, createPortfolio } from "./portfolio";
+import { addLearningPurpose, createPortfolio, reflectOnAllocation, setPurposeStatus, updatePurposeContext } from "./portfolio";
 import { buildPurposeRecommendationPrompt, createDemoPurposeRecommendation, purposeRecommendationOutputSchema } from "./prioritization";
 
 describe("purpose prioritization", () => {
@@ -14,6 +14,21 @@ describe("purpose prioritization", () => {
     expect(prompt).toContain("量子力学が面白そう");
     expect(prompt).toContain("一つだけ");
     expect(prompt).toContain("最終的に選ぶのは学習者");
+  });
+
+  it("uses current context and unintended skew while excluding paused purposes", () => {
+    const statistics = createLearningState({ purpose: "統計", role: "PM", why: "判断したい" });
+    const english = createLearningState({ purpose: "英語", role: "PM", why: "話したい" });
+    let portfolio = addLearningPurpose(createPortfolio(statistics), english);
+    portfolio = updatePurposeContext(portfolio, statistics.purpose.id, { deadline: "2026-08-01", importance: "high", usageContext: "A/Bテスト会議" });
+    portfolio = reflectOnAllocation(portfolio, statistics.purpose.id, "unintended", "英語を後回しにしていた");
+    portfolio = setPurposeStatus(portfolio, english.purpose.id, "paused", "休憩");
+    const prompt = buildPurposeRecommendationPrompt(portfolio, "30分");
+
+    expect(prompt).toContain("2026-08-01");
+    expect(prompt).toContain("A/Bテスト会議");
+    expect(prompt).toContain("英語を後回しにしていた");
+    expect(prompt).not.toContain("### 2. 英語");
   });
 
   it("does not penalize curiosity for lacking a deadline or practical use", () => {
@@ -32,5 +47,14 @@ describe("purpose prioritization", () => {
 
     expect(purposeRecommendationOutputSchema.safeParse(recommendation).success).toBe(true);
     expect(portfolio.purposes.some((state) => state.purpose.id === recommendation.purposeId)).toBe(true);
+  });
+
+  it("changes the demo recommendation when current importance changes", () => {
+    const statistics = createLearningState({ purpose: "統計", role: "", why: "" });
+    const english = createLearningState({ purpose: "英語", role: "", why: "" });
+    let portfolio = addLearningPurpose(createPortfolio(statistics), english);
+    portfolio = updatePurposeContext(portfolio, english.purpose.id, { deadline: null, importance: "high", usageContext: "来週の発表" });
+
+    expect(createDemoPurposeRecommendation(portfolio).purposeId).toBe(english.purpose.id);
   });
 });

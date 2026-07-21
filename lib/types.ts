@@ -48,7 +48,27 @@ export type LearningPurpose = {
   role: string;
   why: string;
   priority: "normal";
+  deadline: string | null;
+  importance: "low" | "normal" | "high";
+  usageContext: string;
+  status: "active" | "paused" | "achieved" | "stopped";
+  statusReason: string;
+  statusChangedAt: string;
   createdAt: string;
+};
+
+export type AllocationRecord = {
+  id: string;
+  depth: "ear" | "desk" | "deep";
+  minutes: number;
+  note: string;
+  recordedAt: string;
+};
+
+export type AllocationReflection = {
+  judgment: "intentional" | "unintended";
+  reason: string;
+  recordedAt: string;
 };
 
 export type LearningPathNode = {
@@ -92,7 +112,10 @@ export type LearningState = {
   currentNodeId: string | null;
   focus: FocusRecommendation | null;
   lastCheck: UnderstandingCheckResult | null;
+  checkHistory: UnderstandingCheckResult[];
   gaps: LearningGap[];
+  allocations: AllocationRecord[];
+  allocationReflection: AllocationReflection | null;
   updatedAt: string;
 };
 
@@ -113,12 +136,22 @@ export type PurposeRecommendation = {
   purposeId: string;
   reason: string;
   basis: string[];
+  createdAt?: string;
+};
+
+export type PurposeContextChange = {
+  purposeId: string;
+  before: { deadline: string | null; importance: "low" | "normal" | "high"; usageContext: string };
+  after: { deadline: string | null; importance: "low" | "normal" | "high"; usageContext: string };
+  changedAt: string;
 };
 
 export type LearningPortfolio = {
-  version: 3;
+  version: 4;
   purposes: LearningState[];
   selectedPurposeId: string;
   recommendation: PurposeRecommendation | null;
+  recommendationHistory: PurposeRecommendation[];
+  contextChanges: PurposeContextChange[];
   updatedAt: string;
 };
