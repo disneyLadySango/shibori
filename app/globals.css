@@ -5,6 +5,9 @@ body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--font-
 button,input,textarea,select { font:inherit; }
 button { color:inherit; }
 main { width:min(760px,calc(100% - 32px)); margin:auto; }
+.language-switch { display:flex; justify-content:flex-end; align-items:center; gap:.35rem; margin-bottom:1.25rem; font:700 11px/1 ui-monospace,monospace; letter-spacing:.08em; }
+.language-switch a,.language-switch strong { border:1px solid var(--line); border-radius:999px; color:var(--ink); padding:.5rem .7rem; text-decoration:none; }
+.language-switch strong { background:var(--ink); color:var(--paper); }
 .hero { min-height:600px; padding:40px 0 70px; display:flex; flex-direction:column; justify-content:center; }
 .brand { display:flex; align-items:center; gap:14px; font-family:var(--font-mincho),serif; letter-spacing:.42em; font-size:18px; }
 .brand .aperture { width:40px; height:40px; color:var(--ink); }
