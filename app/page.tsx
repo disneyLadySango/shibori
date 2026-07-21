@@ -14,9 +14,13 @@ import {
   explainFocus,
   learningDataPolicy,
   prioritizeOpenGaps,
+  reconsiderTarget,
+  rejectFocus,
   recordDependencyCorrection,
   recordPositionCorrection,
   setLearningPlan,
+  summarizeRemaining,
+  updateLearningRhythm,
 } from "@/lib/learning";
 import {
   addLearningPurpose,
@@ -198,6 +202,24 @@ export default function Home() {
     commitLearningState(chooseFocus(state, { id: crypto.randomUUID(), kind: "learn", title, reason: "学習者が今取り組むと選んだ集中先です。", nodeId: null, source: "learner" }));
   }
 
+  function adaptFocus(action: "defer" | "change") {
+    if (!state) return;
+    const reason = window.prompt("この集中先が今は合わない理由は？")?.trim();
+    if (reason) commitLearningState(rejectFocus(state, reason, action));
+  }
+
+  function reviseTarget() {
+    if (!state) return;
+    const next = window.prompt("見直した到達状態を「〜できる」で入力してください", state.targetState ?? "")?.trim();
+    if (next) commitLearningState(reconsiderTarget(state, next, state.path.filter((node) => node.status === "confirmed").map((node) => node.id)));
+  }
+
+  function saveRhythm(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!state) return;
+    const data = new FormData(event.currentTarget);
+    commitLearningState(updateLearningRhythm(state, { lightMinutes: Number(data.get("lightMinutes")), deepMinutes: Number(data.get("deepMinutes")), note: String(data.get("rhythmNote") ?? "") }));
+  }
+
   function correctPosition(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!state || !correctionReason.trim()) return;
@@ -307,6 +329,7 @@ export default function Home() {
   const latestContextChange = portfolio?.contextChanges.at(-1);
   const focusExplanation = state?.focus ? explainFocus(state) : null;
   const pendingChallenge = state?.checkChallenges.findLast((challenge) => challenge.status === "pending");
+  const remaining = state ? summarizeRemaining(state) : null;
 
   return <main>
     <header className="hero">
@@ -349,13 +372,15 @@ export default function Home() {
       {!state ? <p className="empty-state">学習目的を入れると、探索または到達状態への経路が現れます。</p> : state.phase === "exploring" ? <div className="explore-state"><span>EXPLORING</span><h3>いまは探索中</h3><p>まず一度学んでみて、何を「できる」にしたいか見つけられます。到達状態を今決める必要はありません。</p><div className="target-later"><input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="見えてきたCanをここに置く" /><button onClick={establishTarget}>この到達状態で経路をつくる</button></div></div> : <>
         <div className="target-state"><span>CAN / 到達状態</span><strong>{state.targetState}</strong></div>
         <div className="path-list">{state.path.map((node, index) => <article key={node.id} className={`${node.status} ${node.id === state.currentNodeId ? "current" : ""}`}><span>{String(index + 1).padStart(2, "0")}</span><div><h3>{node.title}</h3><p>{node.dependsOn.length ? `前提: ${node.dependsOn.map((id) => state.path.find((item) => item.id === id)?.title ?? id).join(" / ")}` : "前提なし、または未確認"}</p></div><em>{node.id === state.currentNodeId ? "現在地" : statusLabel(node.status)}</em></article>)}</div>
+        {remaining && <div className="remaining-summary"><strong>残り: 抜け {remaining.gaps.length} / 未確認 {remaining.unconfirmed.length}</strong><small>{remaining.note}</small><button type="button" onClick={reviseTarget}>到達状態を見直す</button></div>}
+        <form className="rhythm-form" onSubmit={saveRhythm}><strong>継続的な生活リズム</strong><input name="lightMinutes" type="number" min="0" defaultValue={state.rhythm?.lightMinutes ?? 0} placeholder="軽い集中（分）" /><input name="deepMinutes" type="number" min="0" defaultValue={state.rhythm?.deepMinutes ?? 0} placeholder="深い集中（分）" /><input name="rhythmNote" defaultValue={state.rhythm?.note ?? ""} placeholder="通勤・勤務などの変化" /><button>現在の想定を更新</button></form>
         <form className="correction-form" onSubmit={correctPosition}><h3>現在地や前提関係が違う？</h3><p>異議だけでは理解状態を変えません。訂正前の判断も履歴に残します。</p><label><span>対象</span><select name="nodeId" defaultValue={state.currentNodeId ?? state.path[0]?.id}>{state.path.map((node) => <option key={node.id} value={node.id}>{node.title}</option>)}</select></label><label><span>この前提へ訂正</span><select name="dependsOn"><option value="">前提なし</option>{state.path.map((node) => <option key={node.id} value={node.id}>{node.title}</option>)}</select></label><input value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} placeholder="違うと思う理由" /><div><button name="kind" value="position">現在地を訂正</button><button name="kind" value="dependency">前提関係を訂正</button></div>{state.positionCorrections.at(-1) && <small>前回の訂正: {state.positionCorrections.at(-1)?.reason}</small>}</form>
       </>}
     </section>
 
     <section id="focus" className={!state?.focus ? "muted-section" : ""}>
       <SectionTitle number="02" note="おすすめは一つ。ただし、決めるのはあなたです。">次の集中先</SectionTitle>
-      {!state?.focus ? <p className="empty-state">現在地が分かると、次に集中する一つを提案します。</p> : <div className={`focus-card ${state.focus.kind}`}><span>{state.focus.kind === "explore" ? "探索のひとつ" : state.focus.kind === "reinforce" ? "おすすめの補強" : "次のひとつ"} · {state.focus.source === "learner" ? "あなたの選択" : state.focus.source === "demo" ? "固定デモ" : state.focus.source === "inferred" ? "確認結果からの推定" : "個別判断"}</span><h3>{state.focus.title}</h3><p>{state.focus.reason}</p>{focusExplanation && <details className="focus-basis"><summary>なぜ、この一つ？</summary>{focusExplanation.basis.map((basis) => <p key={basis.label}><strong>{basis.label}</strong><span>{basis.value}</span><em>{({ learner_input: "あなたの入力", confirmed: "確認結果", inferred: "推定", unknown: "判断できない" } as const)[basis.certainty]}</em></p>)}{focusExplanation.uncertainty.map((item) => <small key={item}>{item}</small>)}</details>}<button onClick={() => replan()}>別のおすすめを見る</button></div>}
+      {!state?.focus ? <p className="empty-state">現在地が分かると、次に集中する一つを提案します。</p> : <div className={`focus-card ${state.focus.kind}`}><span>{state.focus.kind === "explore" ? "探索のひとつ" : state.focus.kind === "reinforce" ? "おすすめの補強" : "次のひとつ"} · {state.focus.source === "learner" ? "あなたの選択" : state.focus.source === "demo" ? "固定デモ" : state.focus.source === "inferred" ? "確認結果からの推定" : "個別判断"}</span><h3>{state.focus.title}</h3><p>{state.focus.reason}</p>{focusExplanation && <details className="focus-basis"><summary>なぜ、この一つ？</summary>{focusExplanation.basis.map((basis) => <p key={basis.label}><strong>{basis.label}</strong><span>{basis.value}</span><em>{({ learner_input: "あなたの入力", confirmed: "確認結果", inferred: "推定", unknown: "判断できない" } as const)[basis.certainty]}</em></p>)}{focusExplanation.uncertainty.map((item) => <small key={item}>{item}</small>)}</details>}<button onClick={() => adaptFocus("change")}>理由を残して変更</button><button onClick={() => adaptFocus("defer")}>理由を残して先送り</button></div>}
       {state && <form className="other-focus" onSubmit={selectAnotherFocus}><label><span>OR CHOOSE YOURSELF</span>別の学びを選ぶ<input name="focus" placeholder="今はこれを学ぶ" /></label><button>この学びを選ぶ</button></form>}
     </section>
 

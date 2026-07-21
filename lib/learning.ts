@@ -85,6 +85,9 @@ export const learningStateSchema = z.object({
     id: z.string(), depth: z.enum(["ear", "desk", "deep"]), minutes: z.number().int().positive(), note: z.string(), recordedAt: z.string(),
   })).default([]),
   allocationReflection: z.object({ judgment: z.enum(["intentional", "unintended"]), reason: z.string(), recordedAt: z.string() }).nullable().default(null),
+  rhythm: z.object({ lightMinutes: z.number().int().nonnegative(), deepMinutes: z.number().int().nonnegative(), note: z.string(), updatedAt: z.string() }).nullable().default(null),
+  targetRevisions: z.array(z.object({ previous: z.string().nullable(), next: z.string(), relatedNodeIds: z.array(z.string()), reviewNodeIds: z.array(z.string()), createdAt: z.string() })).default([]),
+  focusDecisions: z.array(z.object({ previousFocus: z.object({ id: z.string(), kind: z.enum(["explore", "learn", "reinforce"]), title: z.string(), reason: z.string(), nodeId: z.string().nullable(), source: z.enum(["personalized", "demo", "learner", "inferred"]).optional() }), reason: z.string(), action: z.enum(["defer", "change"]), createdAt: z.string() })).default([]),
   updatedAt: z.string(),
 });
 
@@ -173,8 +176,38 @@ export function createLearningState(input: { purpose: string; role: string; why:
     gaps: [],
     allocations: [],
     allocationReflection: null,
+    rhythm: null,
+    targetRevisions: [],
+    focusDecisions: [],
     updatedAt: createdAt,
   };
+}
+
+export function summarizeRemaining(state: LearningState) {
+  return {
+    confirmed: state.path.filter((node) => node.status === "confirmed"),
+    gaps: state.path.filter((node) => node.status === "gap"),
+    unconfirmed: state.path.filter((node) => node.status === "unconfirmed" || node.status === "unknown"),
+    note: "未確認は、できないと判明した抜けではありません。順序は状況に応じて見直せます。",
+  };
+}
+
+export function updateLearningRhythm(state: LearningState, input: { lightMinutes: number; deepMinutes: number; note: string }): LearningState {
+  return { ...state, rhythm: { ...input, updatedAt: now() }, updatedAt: now() };
+}
+
+export function reconsiderTarget(state: LearningState, next: string, relatedNodeIds: string[]): LearningState {
+  if (!next.trim()) return state;
+  const related = state.path.filter((node) => relatedNodeIds.includes(node.id)).map((node) => node.id);
+  const revision = { previous: state.targetState, next: next.trim(), relatedNodeIds: related, reviewNodeIds: state.path.filter((node) => !related.includes(node.id)).map((node) => node.id), createdAt: now() };
+  return { ...state, targetState: revision.next, targetRevisions: [...state.targetRevisions, revision], updatedAt: revision.createdAt };
+}
+
+export function rejectFocus(state: LearningState, reason: string, action: "defer" | "change"): LearningState {
+  if (!state.focus || !reason.trim()) return state;
+  const previousFocus = state.focus;
+  const alternative = state.path.find((node) => node.id !== previousFocus.nodeId && node.status !== "confirmed");
+  return { ...state, focus: action === "change" && alternative ? { id: `alternative-${alternative.id}`, kind: "learn", title: alternative.title, reason: `「${reason.trim()}」を反映した代替です。`, nodeId: alternative.id, source: "inferred" } : null, focusDecisions: [...state.focusDecisions, { previousFocus, reason: reason.trim(), action, createdAt: now() }], updatedAt: now() };
 }
 
 export function setLearningPlan(state: LearningState, targetState: string, path: LearningPathNode[]): LearningState {

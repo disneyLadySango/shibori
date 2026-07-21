@@ -181,6 +181,9 @@ export type LearningState = {
   gaps: LearningGap[];
   allocations: AllocationRecord[];
   allocationReflection: AllocationReflection | null;
+  rhythm: { lightMinutes: number; deepMinutes: number; note: string; updatedAt: string } | null;
+  targetRevisions: Array<{ previous: string | null; next: string; relatedNodeIds: string[]; reviewNodeIds: string[]; createdAt: string }>;
+  focusDecisions: Array<{ previousFocus: FocusRecommendation; reason: string; action: "defer" | "change"; createdAt: string }>;
   updatedAt: string;
 };
 
