@@ -1,7 +1,7 @@
 # Shibori user story map
 
 - state: `proposed`
-- revision: `13`
+- revision: `14`
 - updated: `2026-07-21`
 
 このファイルだけが、ユーザーストーリー全体の順序、優先順位、リリーススライスを統括する。個別ストーリーのWho / Pain / Whyは`backlog/`、`active/`、`archive/`のUS-ID文書を正とする。
@@ -42,10 +42,10 @@
 
 - stories: US-004, US-014〜US-024, US-026〜US-031
 - boundary: Slice Aで成立した一周へ、集中資源、説明可能性、再挑戦、訂正を加える
-- state: `backlog`
+- state: `active`
 - first_approval_candidate: US-017, US-004, US-021
 - first_candidate_boundary: 今回使える集中資源に合わせ、必要な学びを損なわない一つへ変形し、成立しなければ適合する学びがない理由を示す。学習材料を今使う、後で使う、関係しない、判断できないに区別し、元内容を保って今回使う一つを選ぶ。理解状態は注意の深さや教材への接触ではなく、実際の理解確認によってのみ更新する
-- first_candidate_state: `backlog`
+- first_candidate_state: `active`
 
 ### Slice B — 複数の学習目的でも分散しない
 
@@ -67,7 +67,7 @@
 
 ## Priority decision
 
-Slice AとSlice Bの承認済み境界は実装済みである。次の承認候補は、Shiboriの核である「集中資源に教材を合わせる」を一回の学びとして成立させるSlice A2のUS-017、US-004、US-021とする。3 ACと9テスト仕様は承認候補であり、人間が承認するまでactiveへ移さない。
+Slice AとSlice Bの承認済み境界は実装済みである。Slice A2の最初の境界であるUS-017、US-004、US-021は、人間が3 ACと9テスト仕様を承認し、実装対象としてactiveである。
 
 ## Revision history
 
@@ -84,3 +84,4 @@ Slice AとSlice Bの承認済み境界は実装済みである。次の承認候
 - revision 11, 2026-07-21: 人間がUS-012、US-013、US-026の3 ACと8テスト仕様を承認し、Slice Bの第二境界をactive化。
 - revision 12, 2026-07-21: ストーリー監査に基づき、到達判定、集中資源、抜けの活動順を再編。US-022とUS-028を横断関心へ移し、US-031を追加。Slice A2の最初の承認候補をUS-017、US-004、US-021に設定。
 - revision 13, 2026-07-21: Q-008〜Q-010の回答を反映し、Slice A2の最初の境界を、集中資源への変形、注意の深さと理解確認の分離、学習材料の4つの位置づけとして明確化。
+- revision 14, 2026-07-21: 人間がUS-017、US-004、US-021の3 ACと9テスト仕様を承認し、Slice A2の最初の境界をactive化。

@@ -11,6 +11,8 @@ const requestSchema = z.object({
     id: z.string(), topic: z.string(), reason: z.string(),
     source: z.enum(["detected", "user_reported"]), resolved: z.boolean(),
   })),
+  focusResource: z.object({ minutes: z.number().int().positive().max(480), attention: z.enum(["light", "deep"]) }),
+  learningPosition: z.object({ targetState: z.string().nullable(), current: z.string(), focus: z.string() }),
 });
 
 export async function POST(request: Request) {
@@ -24,7 +26,7 @@ export async function POST(request: Request) {
         { status: 503 },
       );
     }
-    return NextResponse.json(createDemoProjection(parsed.data.context, parsed.data.gaps));
+    return NextResponse.json(createDemoProjection(parsed.data.context, parsed.data.gaps, parsed.data.focusResource));
   }
 
   try {
