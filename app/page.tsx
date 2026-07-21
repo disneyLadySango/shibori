@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
-import { applyCheckResult, chooseFocus, createLearningState, setLearningPlan } from "@/lib/learning";
+import { applyCheckResult, chooseFocus, completeReinforcement, createLearningState, deferGap, prioritizeOpenGaps, setLearningPlan } from "@/lib/learning";
 import { addLearningPurpose, createPortfolio, getSelectedLearningState, resumePortfolio, selectLearningPurpose, updateLearningPurpose } from "@/lib/portfolio";
 import { sampleMaterialEn } from "@/lib/shibori";
 import type { LearningPlanProposal, LearningPortfolio, LearningState, Projection, UnderstandingCheckResult } from "@/lib/types";
@@ -55,6 +55,7 @@ export default function EnglishHome() {
   useEffect(() => () => { if (audioUrl) URL.revokeObjectURL(audioUrl); }, [audioUrl]);
 
   const state = portfolio ? getSelectedLearningState(portfolio) : null;
+  const prioritizedGaps = state ? prioritizeOpenGaps(state) : null;
 
   function commit(next: LearningState, add = false) {
     setPortfolio((current) => {
@@ -166,13 +167,18 @@ export default function EnglishHome() {
       </form>
     </section>
 
+    <section className={!state ? "muted-section" : ""}>
+      <SectionTitle number="01" note="See the destination, dependencies, and the position supported by your checks.">Your path and current position</SectionTitle>
+      {!state ? <p className="empty-state">Add a learning purpose to reveal an exploration or a path toward your Can.</p> : state.phase === "exploring" ? <div className="explore-state"><span>EXPLORING</span><h3>Your Can can come later.</h3><p>Try one meaningful example first. Use the understanding check to notice what you want to be able to explain or do.</p></div> : <><div className="target-state"><span>CAN / TARGET STATE</span><strong>{state.targetState}</strong></div><div className="path-list">{state.path.map((node, index) => <article key={node.id} className={`${node.status} ${node.id === state.currentNodeId ? "current" : ""}`}><span>{String(index + 1).padStart(2, "0")}</span><div><h3>{node.title}</h3><p>{node.dependsOn.length ? `Depends on: ${node.dependsOn.map((id) => state.path.find((item) => item.id === id)?.title ?? id).join(" / ")}` : "No confirmed prerequisite"}</p></div><em>{node.id === state.currentNodeId ? "CURRENT" : ({ unknown: "UNKNOWN", unconfirmed: "UNCHECKED", confirmed: "CONFIRMED", gap: "GAP" } as const)[node.status]}</em></article>)}</div></>}
+    </section>
+
     <section id="focus" className={!state?.focus ? "muted-section" : ""}>
-      <SectionTitle number="01" note="One recommendation, with its reason. The decision remains yours.">Your next focus</SectionTitle>
+      <SectionTitle number="02" note="One recommendation, with its reason. The decision remains yours.">Your next focus</SectionTitle>
       {!state?.focus ? <p className="empty-state">Add a learning purpose to reveal one next focus.</p> : <div className={`focus-card ${state.focus.kind}`}><span>{state.focus.kind === "explore" ? "ONE EXPLORATION" : "ONE NEXT FOCUS"} · {state.focus.source === "demo" ? "DEMO" : "GPT-5.6"}</span><h3>{state.focus.title}</h3><p>{state.focus.reason}</p><button type="button" onClick={() => void replan()} disabled={loading}>Reconsider from my current state</button></div>}
     </section>
 
     {projection && <section>
-      <SectionTitle number="02" note="The material changes shape around the focus you can afford now.">Material shaped to your focus</SectionTitle>
+      <SectionTitle number="03" note="The material changes shape around the focus you can afford now.">Material shaped to your focus</SectionTitle>
       {projection.source === "demo" && <p className="demo-notice">Demo mode. With an API key, GPT-5.6 makes the same decisions from your own material.</p>}
       <div className="material-map"><h3>Material map</h3>{projection.segments.map((segment, index) => <article key={`${segment.text}-${index}`} className={segment.position}><span>{({ now: "USE NOW", later: "LATER", unrelated: "UNRELATED", unknown: "UNKNOWN" } as const)[segment.position]}</span><div><strong>{segment.text}</strong><small>{segment.reason}</small></div><em>{segment.attention === "light" ? "LIGHT" : segment.attention === "deep" ? "DEEP" : "UNDECIDED"}</em></article>)}</div>
       {projection.earScript && <div className="allocation single"><article className="ear-card"><span className="card-label">LIGHT FOCUS</span><h3>Grasp it by listening</h3><p className="script">{projection.earScript}</p><div className="audio-row"><button type="button" onClick={playLecture} disabled={audioLoading}>{audioLoading ? "Generating…" : "▶ Play the lecture"}</button><span>Listening alone does not mark this as understood.</span></div>{audioUrl && <audio ref={audioRef} src={audioUrl} controls />}</article></div>}
@@ -180,8 +186,13 @@ export default function EnglishHome() {
     </section>}
 
     <section className={!plan ? "muted-section" : ""}>
-      <SectionTitle number={projection ? "03" : "02"} note="Check what you can do now—not whether you merely read or listened.">Check your understanding</SectionTitle>
+      <SectionTitle number={projection ? "04" : "03"} note="Check what you can do now—not whether you merely read or listened.">Check your understanding</SectionTitle>
       {!plan ? <p className="empty-state">Choose a focus to receive one question.</p> : <div className="check-card"><span>CHECK ONE THING</span><h3>{plan.check.prompt}</h3><p>{plan.check.reason}</p><textarea value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder="Explain in your own words, show a calculation, or give your reason." /><button type="button" onClick={check} disabled={checking}>{checking ? "Checking what you can do…" : "Check my current understanding"}</button>{result && <div className={`check-result ${result.outcome}`}><strong>{result.outcome === "confirmed" ? "Confirmed here" : "One gap found—without erasing what you did"}</strong><p>{result.summary}</p><small>Next: {result.nextAction}</small></div>}</div>}
+    </section>
+
+    <section className={!prioritizedGaps ? "muted-section" : ""}>
+      <SectionTitle number={projection ? "05" : "04"} note="See why a gap matters, then choose whether to reinforce it now or later.">Gaps and reinforcement</SectionTitle>
+      {!prioritizedGaps ? <p className="empty-state">When a check reveals a gap, Shibori keeps the return point without erasing what you already demonstrated.</p> : <div className="gap-list"><article><span>ONE GAP WITH THE MOST IMPACT</span><div><h3>{prioritizedGaps.gap.topic}</h3><p>{prioritizedGaps.reason}</p><small>{prioritizedGaps.gap.impact}</small></div><div className="gap-actions"><button type="button" onClick={() => commit(chooseFocus(state!, { id: `reinforce-${prioritizedGaps.gap.id}`, kind: "reinforce", title: prioritizedGaps.gap.topic, reason: `${prioritizedGaps.gap.reason}. ${prioritizedGaps.gap.impact}`, nodeId: prioritizedGaps.gap.returnNodeId }))}>Reinforce now</button><button type="button" onClick={() => commit(deferGap(state!, prioritizedGaps.gap.id))}>Later</button><button type="button" onClick={() => commit(completeReinforcement(state!, prioritizedGaps.gap.id))}>Finish and return</button></div></article>{prioritizedGaps.remaining.length > 0 && <details className="remaining-gaps"><summary>{prioritizedGaps.remaining.length} more gaps kept for later</summary>{prioritizedGaps.remaining.map((gap) => <p key={gap.id}><strong>{gap.topic}</strong> — {gap.impact}</p>)}</details>}</div>}
     </section>
   </main>;
 }
