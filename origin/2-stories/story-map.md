@@ -1,8 +1,8 @@
 # Shibori user story map
 
 - state: `proposed`
-- revision: `7`
-- updated: `2026-07-20`
+- revision: `8`
+- updated: `2026-07-21`
 
 このファイルだけが、ユーザーストーリー全体の順序、優先順位、リリーススライスを統括する。個別ストーリーのWho / Pain / Whyは`backlog/`、`active/`、`archive/`のUS-ID文書を正とする。
 
@@ -41,6 +41,8 @@
 - stories: US-010〜US-013, US-026、およびSlice Aの関連ストーリー
 - boundary: 二つ以上の学習目的を混同せず、一つを選択する
 - state: `backlog`
+- first_approval_candidate: US-010, US-011
+- first_candidate_boundary: 二つ以上の学習目的について到達状態、現在地、理解状態、確認結果、抜けを混同せず保持する。外部から理由つきのおすすめを一つ提示するが、最終的な集中先は学習者が選び、おすすめ以外を選んでも他の学習目的の状態や扱いを損なわない
 
 ### Slice C — 配分の妥当性を学ぶ
 
@@ -50,7 +52,7 @@
 
 ## Priority decision
 
-最初の承認対象はSlice Aのみとする。Slice Aの成果基準と検証方法が承認されるまで、Slice A2以降をactiveへ移さない。
+Slice Aの成果基準と検証方法は承認済みである。次の承認候補は、複数の学習目的を混同せず持ち、その中から次の一つを選べるSlice BのUS-010、US-011とする。人間が成果基準と検証方法を承認するまでactiveへ移さない。
 
 ## Revision history
 
@@ -61,3 +63,4 @@
 - revision 5, 2026-07-20: 補強の実行時期を学習者が決めるUS-025をSlice Aへ追加。
 - revision 6, 2026-07-20: 補強へ今取り組まない場合も、他の学びを妨げない境界をQ-004から導出。
 - revision 7, 2026-07-20: 到達状態が未定でも探索を一つ推奨し、経験からCanを後で作れる入口へ改訂。
+- revision 8, 2026-07-21: Q-003の回答を反映し、Slice Bの最初の承認候補を状態分離と学習者所有の選択へ限定。
