@@ -3,6 +3,21 @@ import { describe, expect, it } from "vitest";
 import { buildEvaluationPrompt, buildProjectionPrompt, createDemoEvaluation, createDemoProjection, normalizeProjection, projectionSchema } from "./shibori";
 
 describe("buildProjectionPrompt", () => {
+  it("uses only English instructions for an English projection", () => {
+    const prompt = buildProjectionPrompt({
+      context: { role: "Engineer", goal: "Interpret experiments", why: "Make better decisions", updatedAt: "now" },
+      material: "A p-value describes how surprising data would be under a null hypothesis.",
+      gaps: [],
+      focusResource: { minutes: 15, attention: "light" },
+      learningPosition: { targetState: "I can interpret an experiment", current: "P-values", focus: "Explain a p-value" },
+      language: "en",
+    });
+
+    expect(prompt).toContain("Write all generated fields in English");
+    expect(prompt).toContain("Select exactly one part");
+    expect(prompt).not.toMatch(/[ぁ-んァ-ン一-龯]/);
+  });
+
   it("combines material, context, and unresolved gaps", () => {
     const prompt = buildProjectionPrompt({
       context: { role: "エンジニア兼PM", goal: "統計を学びたい", why: "A/Bテストを設計したい", updatedAt: "now" },

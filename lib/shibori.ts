@@ -101,11 +101,50 @@ type EvaluationPromptInput = { context: UserContext; problem: string; answer: st
 
 export function buildProjectionPrompt({ context, material, gaps, focusResource, learningPosition, language = "ja" }: PromptInput) {
   const unresolved = gaps.filter((gap) => !gap.resolved);
+  if (language === "en") {
+    const gapSection = unresolved.length
+      ? unresolved.map((gap) => `- ${gap.topic}: ${gap.reason}`).join("\n")
+      : "None";
+    return `Write all generated fields in English. Do not use Japanese unless it appears in learner-provided content.
+
+You are a learning-material editor who reserves the learner's deep focus for the parts that truly require it.
+
+## Learner context
+- Activity: ${context.role || "Not provided"}
+- Learning goal: ${context.goal}
+- Reason for learning: ${context.why || "Curiosity"}
+
+## Unresolved gaps
+${gapSection}
+${unresolved.length ? "Insert a short refresher for every unresolved gap at the beginning of the listening script." : ""}
+
+## Learning position
+- Target state: ${learningPosition.targetState ?? "Not set; exploring"}
+- Current position: ${learningPosition.current}
+- Current focus: ${learningPosition.focus}
+
+## Focus available now
+- Time: ${focusResource.minutes} minutes
+- Attention depth: ${focusResource.attention === "light" ? "light" : "deep"}
+
+## Material
+${material}
+
+## Mapping and selection rules
+- Map every paragraph to now, later, unrelated, or unknown. Use unknown when evidence is insufficient; never treat later as unnecessary.
+- Preserve the source order and meaning. Summarize segments.text in at most 40 characters and reason in at most 25 characters. Set attention to null only when it cannot be determined.
+- Adapt the material to the available time and attention only when the necessary learning is preserved. Select exactly one part for this session.
+- If no valid part fits, return fit.status as no_fit and set selected, earScript, and deskTask to null. Explain why instead of inventing a task.
+- For light attention, return only earScript: 250–350 characters, no formulas, and one analogy tied to the learner's activity. Set deskTask to null.
+- For deep attention, return only deskTask: one problem requiring explanation, calculation, judgment, or recall. Set earScript to null.
+- Reading, listening, or mapping material is never by itself evidence of understanding.
+- Return prerequisite-gap candidates in gaps only when the material provides evidence; otherwise return an empty array.`;
+  }
   const gapSection = unresolved.length
     ? unresolved.map((gap) => `- ${gap.topic}: ${gap.reason}`).join("\n")
     : "なし";
 
-  return `${language === "en" ? "Write all generated fields in English." : "生成する各項目はすべて日本語で書く。"}
+  return `生成する各項目はすべて日本語で書く。
 
 あなたは、学習者の深い集中を本当に必要な箇所だけに配分する教材編集者です。
 
@@ -136,7 +175,7 @@ ${material}
 - segments.text は40字以内の要約、reason は25字以内にする。attention は必要な注意の深さ、判断不能なら null にする。
 - 今回使える集中資源にそのまま合わなければ、必要な学びを損なわない範囲で小さくするか注意の深さを変え、今回着手する一つだけを selected にする。
 - 変形しても成立しなければ fit.status を no_fit、selected、earScript、deskTaskを null とし、無理に課題を作らず理由を示す。
-- selected が軽い集中なら earScript だけを返す。${language === "en" ? "英語" : "日本語"}250〜350字で数式を使わず、学習者の活動に寄せた例え話を1つ含める。deskTaskはnullにする。
+- selected が軽い集中なら earScript だけを返す。日本語250〜350字で数式を使わず、学習者の活動に寄せた例え話を1つ含める。deskTaskはnullにする。
 - selected が深い集中なら deskTask だけを返す。説明、計算、判断、想起のいずれかを行う1問にし、earScriptはnullにする。
 - 教材を聞いた、読んだ、位置づけた事実だけを、理解できた根拠にしない。
 - 教材理解に必要な前提の欠落候補を gaps に挙げる。根拠がなければ空配列にする。`;
